@@ -1,186 +1,255 @@
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, Modal, Pressable } from "react-native";
+import { useMemo, useState, useCallback, useEffect } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, Pressable, FlatList, Dimensions, Share } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { useTasks } from "../context/TaskContext";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useMemo, useState } from "react";
 import { TopBar } from "../components/TopBar";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { DrawerActions } from "@react-navigation/native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import DragList, { DragListRenderItemInfo } from "react-native-draglist";
+import TaskCard from "../components/TaskCard";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
+import HorizontalScrollWithUnderline from "../components/HorizontalScrollWithUnderline";
+import DueDateSectionList from "../components/DueDateSectionList";
 
 
 type HomeScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, "Home">;
 };
-
-type SortOption = 'dueDateAsc' | 'dueDateDesc' | 'createdAtAsc' | 'createdAtDesc' | null;
+type SortOption = 'custom' | 'dueDateAsc' | 'dueDateDesc' | 'createdAtAsc' | 'createdAtDesc' | null;
+const { width } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
-  const { tasks, deleteTask } = useTasks();
-  const [searchVisible, setSearchVisible] = useState(false);
-  const [searchText, setSearchText] = useState('');
-  const [sortModalVisible, setSortModalVisible] = useState(false);
-  const [sortOption, setSortOption] = useState<SortOption>(null);
 
-  const handleDelete = (id: string, title: string) => {
+  const { 
+    tasks, 
+    taskLists, 
+    currentTaskList, 
+    currentTaskListId, 
+    setCurrentTaskList, 
+    addTaskList, 
+    deleteTask, 
+    reorderTasks 
+  } = useTasks();
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [sortOption, setSortOption] = useState<SortOption>('custom');
+  const insets = useSafeAreaInsets();
+
+  // When taskLists load or change, ensure we have a selected/current list
+  useEffect(() => {
+    if (taskLists.length > 0 && !currentTaskList) {
+      setCurrentTaskList(taskLists[0].id);
+    }
+    // If you want to preserve user's last selection across mounts,
+    // load it from storage and set it here instead.
+  }, [taskLists, currentTaskList]);
+
+  // useEffect(() => {
+  //   console.debug("HomeScreen sees lists:", taskLists.map(t => t.title));
+  //   console.debug("HomeScreen current list:", currentTaskList?.title);
+  // }, [taskLists, currentTaskList]);
+
+  const displayedTasks = useMemo(() => {
+    if (!currentTaskListId) return [];
+    return tasks.filter(t => t.tasklistId === currentTaskListId);
+  }, [tasks, currentTaskListId, sortOption]);
+
+  const activeIndex = useMemo(() => {
+    if (!currentTaskList) return 0;
+    return taskLists.findIndex(t => t.id === currentTaskList.id);
+  }, [taskLists, currentTaskList]);
+
+  const renderDragListItem = (info: DragListRenderItemInfo<typeof tasks[0]>) => {
+    const { item, onDragStart, onDragEnd, isActive } = info;
+    return (
+      <TaskCard
+        key={item.id}
+        item={item}
+        onLongPress={handleLongPress}
+        showDragHandle={true}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        isActive={isActive}
+      />
+    );
+  };
+
+  const onReordered = (fromIndex: number, toIndex: number) => {
+    const copy = [...displayedTasks];
+    const [removed] = copy.splice(fromIndex, 1);
+    copy.splice(toIndex, 0, removed);
+    reorderTasks(copy);
+  };
+
+  const handleDelete = useCallback((id: string, title: string) => {
     Alert.alert("Delete Task", `Are you sure you want to delete "${title}"?`, [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => deleteTask(id) },
     ]);
-  };
+  }, [deleteTask]);
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return null;
-    const date = new Date(dateString);
-    return date.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
-
-  // Compute filtered + sorted list derived from tasks, searchText and sortOption
-  const displayedTasks = useMemo(() => {
-    const q = searchText.trim().toLowerCase();
-    let list = tasks.slice(); // copy
-
-
-    if (q.length > 0) {
-      list = list.filter((t) => t.title.toLowerCase().includes(q));
-    }
-
-
-    if (sortOption) {
-      list.sort((a, b) => {
-        if (sortOption === 'dueDateAsc' || sortOption === 'dueDateDesc') {
-          const aTs = a.dueDate ? new Date(a.dueDate).getTime() : (sortOption === 'dueDateAsc' ? Infinity : -Infinity);
-          const bTs = b.dueDate ? new Date(b.dueDate).getTime() : (sortOption === 'dueDateAsc' ? Infinity : -Infinity);
-          return sortOption === 'dueDateAsc' ? aTs - bTs : bTs - aTs;
-        }
-
-
-        // createdAt sorts (createdAt should exist)
-        const aC = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bC = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return sortOption === 'createdAtAsc' ? aC - bC : bC - aC;
-      });
-    }
-
-
-    return list;
-  }, [tasks, searchText, sortOption]);
-
-
-  const onSearchIconPress = () => {
-    setSearchVisible((v) => {
-      const next = !v;
-      if (!next) setSearchText(''); // clear when closing search
-      return next;
-    });
-  };
-
-
-  const onFilterIconPress = () => {
-    setSortModalVisible(true);
-  };
-
+  const handleLongPress = useCallback((id: string) => {
+    setSelectedTaskId(id);
+  }, []);
 
   const selectSort = (option: SortOption) => {
     setSortOption(option);
-    setSortModalVisible(false);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <TopBar
-        title={searchVisible ? '' : 'My Tasks'}
-        icon1={<Ionicons name="search" size={20} />}
-        icon2={<Ionicons name="filter" size={20} />}
-        onIcon1Press={onSearchIconPress}
-        onIcon2Press={onFilterIconPress}
+    <SafeAreaView
+      style={styles.container}>
+      <TopBar title={'My Tasks'}
+        leftIcon={require('../assets/default-profile.png')}
+        onLeftIconPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+        rightIcon1={<Ionicons name="sync" size={20} />}
+        rightIcon2={<Ionicons name="filter" size={20} />}
+        rightIcon3={<Ionicons name="ellipsis-vertical-outline" size={20} />}
+        filterMenuItems={[
+          { label: 'Custom sort', onPress: () => selectSort('custom') },
+          { label: 'Sort by due date ↑', onPress: () => selectSort('dueDateAsc') },
+          // { label: 'Sort by due date ↓', onPress: () => selectSort('dueDateDesc') },
+          // { label: 'Sort by creation ↑', onPress: () => selectSort('createdAtAsc') },
+          { label: 'Sort by creation ↓', onPress: () => selectSort('createdAtDesc') },
+          // { label: 'Clear sort', onPress: () => selectSort('createdAtDesc') },
+        ]}
+        otherMenuItems={[
+          { label: 'Add multiple tasks', onPress: () => { } },
+          { label: 'Clear completed tasks', onPress: () => { } },
+          { label: 'View completed tasks', onPress: () => { } },
+          { label: 'Manage task lists', onPress: () => { navigation.navigate('TaskList')}},
+          {
+            label: 'Share task lists', onPress: async () => {
+              if (!currentTaskList || displayedTasks.length === 0) {
+                Alert.alert('No tasks', 'There are no tasks to share in this list.');
+                return;
+              }
+
+              const taskLines = displayedTasks.map(task => {
+                let line = task.title;
+
+                if (task.description) {
+                  line += ` - ${task.description}`;
+                }
+
+                if (task.dueDate) {
+                  const dueDate = new Date(task.dueDate);
+                  const formattedDate = dueDate.toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    year: dueDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
+                  });
+                  line += ` (Due: ${formattedDate})`;
+                }
+
+                return line;
+              });
+
+              const shareText = `${currentTaskList.title}\n\n${taskLines.join('\n')}`;
+
+              try {
+                await Share.share({
+                  message: shareText,
+                });
+              } catch (error) {
+                Alert.alert('Sharing failed', 'Unable to share the task list.');
+              }
+            }
+          },
+        ]}
+      />
+      <HorizontalScrollWithUnderline
+        taskLists={taskLists}
+        selectedIndex={activeIndex}
+        onActiveChange={(index) => {
+          if (index < 0 || index >= taskLists.length) return;
+          setCurrentTaskList(taskLists[index].id);
+        }}
       />
 
-      {searchVisible && (
-        <View style={styles.searchRow}>
-          <TextInput
-            placeholder="Search tasks by title..."
-            value={searchText}
-            onChangeText={setSearchText}
-            style={styles.searchInput}
-            autoFocus
-            returnKeyType="search"
-          />
-          <TouchableOpacity onPress={() => { setSearchText(''); setSearchVisible(false); }} style={styles.cancelButton}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
+      {selectedTaskId && (
+        <Modal
+          transparent
+          visible={!!selectedTaskId}
+          animationType="fade"
+          onRequestClose={() => setSelectedTaskId(null)}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => setSelectedTaskId(null)}>
+            <View style={styles.actionRow} onStartShouldSetResponder={() => true}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={async () => {
+                  const task = tasks.find(t => t.id === selectedTaskId);
+                  if (task) {
+                    await Share.share({
+                      message: `${task.title}\n${task.description || ''}`,
+                    });
+                  }
+                  setSelectedTaskId(null);
+                }}
+              >
+                <Ionicons name="share-outline" size={24} color="#007AFF" />
+                <Text style={styles.actionText}>Share</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => {
+                  deleteTask(selectedTaskId);
+                  setSelectedTaskId(null);
+                }}
+              >
+                <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+                <Text style={styles.actionText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Modal>
+      )}
 
       {displayedTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>No tasks yet</Text>
           <Text style={styles.emptySubtext}>Tap + to add your first task</Text>
         </View>
+      ) : sortOption === 'custom' ? (
+        <DragList
+          data={displayedTasks}
+          keyExtractor={(it) => it.id}
+          renderItem={renderDragListItem}
+          onReordered={onReordered}
+          containerStyle={{ padding: 16 }}
+        />
+      ) : sortOption === 'dueDateAsc' ? (
+        <DueDateSectionList
+          tasks={displayedTasks}
+          onDelete={(id: string) => handleLongPress(id)}
+        />
       ) : (
         <FlatList
           data={displayedTasks}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <TouchableOpacity
-                style={styles.taskCard}
-                onPress={() => navigation.navigate("EditTask", { taskId: item.id })}
-                onLongPress={() => handleDelete(item.id, item.title)}>
-              <Text style={styles.taskTitle}>{item.title}</Text>
-              {item.description && <Text style={styles.taskDescription}>{item.description}</Text>}
-              {item.dueDate && <Text style={styles.taskDueDate}>Due: {formatDate(item.dueDate)}</Text>}
-            </TouchableOpacity>
+            <TaskCard
+              item={item}
+              showDragHandle={false}
+              onLongPress={() => handleLongPress(item.id)}
+            />
           )}
         />
       )}
 
-
       {/* Floating Add Button */}
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => navigation.navigate('AddTask')}
+        onPress={() => navigation.navigate('AddTask', { taskListId: currentTaskList?.id })}
         accessibilityLabel="Add task"
       >
         <Text style={styles.addButtonText}>+</Text>
       </TouchableOpacity>
-
-
-      {/* Sort Modal */}
-      <Modal visible={sortModalVisible} transparent animationType="fade" onRequestClose={() => setSortModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Sort tasks</Text>
-            <Pressable style={styles.modalButton} onPress={() => selectSort('dueDateAsc')}>
-              <Text>Due Date (ascending)</Text>
-            </Pressable>
-            <Pressable style={styles.modalButton} onPress={() => selectSort('dueDateDesc')}>
-              <Text>Due Date (descending)</Text>
-            </Pressable>
-            <Pressable style={styles.modalButton} onPress={() => selectSort('createdAtAsc')}>
-              <Text>Creation Date (ascending)</Text>
-            </Pressable>
-            <Pressable style={styles.modalButton} onPress={() => selectSort('createdAtDesc')}>
-              <Text>Creation Date (descending)</Text>
-            </Pressable>
-            <Pressable style={styles.modalButton} onPress={() => selectSort(null)}>
-              <Text style={{ fontWeight: '600' }}>Clear sort</Text>
-            </Pressable>
-
-
-            <Pressable style={[styles.modalButton, styles.modalClose]} onPress={() => setSortModalVisible(false)}>
-              <Text>Close</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -190,6 +259,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  tabsWrap: {
+    height: 72,
+    justifyContent: 'center',
+  },
+  tabItem: {
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  tabTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111',
+  },
+  tabMeta: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+
+  underline: {
+    position: 'absolute',
+    bottom: 10,
+    width: 72,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#007AFF',
+  },
+
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -217,7 +323,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   listContent: {
-    padding: 16,
+    paddingVertical: 6,
+    flex: 1
   },
   taskCard: {
     backgroundColor: '#ffffff',
@@ -263,8 +370,8 @@ const styles = StyleSheet.create({
   },
   addButton: {
     position: 'absolute',
-    right: 36, // ToDo: Take screen width and move for %
-    bottom: 36, // ToDo: Take screen height and move for %
+    right: width * 0.1,
+    bottom: height * 0.1,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -282,32 +389,29 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: -2,
   },
-
-
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
-  modalContent: {
-    width: '90%',
+
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  modalButton: {
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#e6e6e6',
   },
-  modalClose: {
-    borderBottomWidth: 0,
-    marginTop: 8,
+
+  actionButton: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+
+  actionText: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#000',
   },
 });

@@ -10,21 +10,17 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { useTasks } from "../context/TaskContext";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+import { RootStackParamList } from "../App";
 
 
-type RootStackParamList = {
-  Home: undefined;
-  AddTask: undefined;
-};
+type AddTaskProps = NativeStackScreenProps<RootStackParamList, "AddTask">;
 
-type AddTaskScreenProps = {
-  navigation: NativeStackNavigationProp<RootStackParamList, "AddTask">;
-};
-
-export default function AddTaskScreen({ navigation }: AddTaskScreenProps) {
+export default function AddTaskScreen({ route, navigation }: AddTaskProps) {
   const { addTask } = useTasks();
+  const { taskListId } = route.params ?? {};
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -36,6 +32,7 @@ export default function AddTaskScreen({ navigation }: AddTaskScreenProps) {
       title: title.trim(),
       description: description.trim() || undefined,
       dueDate: dueDate.trim() || undefined,
+      tasklistId: taskListId || undefined
     });
     navigation.goBack();
   };
