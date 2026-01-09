@@ -7,18 +7,14 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
-  KeyboardAvoidingView,
 } from "react-native";
 import { useTasks } from "../context/TaskContext";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+import { RootStackParamList } from "../App";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-type RootStackParamList = {
-  Home: undefined;
-  AddTask: undefined;
-  EditTask: { taskId: string };
-};
 
 type EditTaskScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, "EditTask">;
@@ -35,7 +31,6 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
   const [dueDate, setDueDate] = useState(task?.dueDate || "");
   const [showPicker, setShowPicker] = useState(false);
 
-  // Load task data on mount (in case tasks change externally)
   useEffect(() => {
     if (task) {
       setTitle(task.title);
@@ -68,7 +63,6 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
     setDueDate(`${year}-${month}-${day}T${hours}:${minutes}`);
   };
 
-  // If task not found (edge case), show error or navigate back
   if (!task) {
     return (
       <View style={styles.container}>
@@ -78,11 +72,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
   }
 
   return (
-    // KeyboardAvoidingView adjusts the view when the keyboard appears to prevent overlap with inputs.
-    // On iOS, 'padding' adds bottom padding equal to keyboard height.
-    // On Android, 'height' resizes the view's height to fit above the keyboard.
-    // This ensures the form remains scrollable and visible during input.
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.cancelButton}>Cancel</Text>
@@ -93,7 +83,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.form}>
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Title *</Text>
           <TextInput
@@ -143,7 +133,8 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
         onCancel={() => setShowPicker(false)}
         date={dueDate ? new Date(dueDate) : new Date()}
       />
-    </KeyboardAvoidingView>
+
+    </SafeAreaView>
   );
 }
 

@@ -33,11 +33,22 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [taskLists, setTaskLists] = useState<TaskList[]>([]);
   const [currentTaskListId, setCurrentTaskListId] = useState<string | null>(null);
-  const didInitCurrentListRef = useRef(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (isLoading) return;
+    (async () => {
+      try {
+        await AsyncStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
+        console.debug("[TaskProvider] saved tasks count:", tasks.length);
+      } catch (e) {
+        console.error("Failed to save tasks:", e);
+      }
+    })();
+  }, [tasks, isLoading]);
 
   // Persist taskLists whenever they change (but not during initial load)
   useEffect(() => {
@@ -69,20 +80,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     })();
   }, [currentTaskListId, isLoading]);
 
-  useEffect(() => {
-    if (isLoading) return;
-    (async () => {
-      try {
-        await AsyncStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
-        console.debug("[TaskProvider] saved tasks count:", tasks.length);
-      } catch (e) {
-        console.error("Failed to save tasks:", e);
-      }
-    })();
-  }, [tasks, isLoading]);
-
   const loadData = async () => {
     try {
+      setIsLoading(true);
       const storedTasks = await AsyncStorage.getItem(TASKS_STORAGE_KEY);
       const storedTaskLists = await AsyncStorage.getItem(TASKLISTS_STORAGE_KEY);
       const storedCurrentTaskListId = await AsyncStorage.getItem(CURRENT_TASKLIST_STORAGE_KEY);
@@ -91,20 +91,14 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       let loadedTaskLists: TaskList[] = storedTaskLists ? JSON.parse(storedTaskLists) : [];
       let restoredCurrentListId: string | null = storedCurrentTaskListId ?? null;
 
-      console.log(loadedTasks);
-      console.log(loadedTaskLists);
-
       if (!loadedTaskLists || loadedTaskLists.length === 0) {
         const now = new Date().toISOString();
         loadedTaskLists = [
-          { id: uuidv4(), title: "My List 1", createdAt: now, lastModified: now },
-          { id: uuidv4(), title: "My List 2", createdAt: now, lastModified: now },
-          { id: uuidv4(), title: "My List 3", createdAt: now, lastModified: now },
+          { id: uuidv4(), title: "My List", createdAt: now, lastModified: now },
         ];
         await AsyncStorage.setItem(TASKLISTS_STORAGE_KEY, JSON.stringify(loadedTaskLists));
         console.debug("[TaskProvider] created default lists and persisted them");
       }
-
       // If restored current id doesn't match loaded lists, fall back to first
       const hasRestoredMatch = restoredCurrentListId && loadedTaskLists.some(tl => tl.id === restoredCurrentListId);
       if (!hasRestoredMatch) {
@@ -117,15 +111,14 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       // apply restored id only if currentTaskListId is still null (won't overwrite user selection)
       setCurrentTaskListId(prev => {
         if (prev !== null) {
-          console.debug("[TaskProvider] loadData skipped restoring currentTaskListId because runtime value exists:", prev);
+          // console.debug("[TaskProvider] loadData skipped restoring currentTaskListId because runtime value exists:", prev);
           return prev;
         }
-        console.debug("[TaskProvider] loadData restored currentTaskListId:", restoredCurrentListId);
+        // console.debug("[TaskProvider] loadData restored currentTaskListId:", restoredCurrentListId);
         return restoredCurrentListId;
       });
-      didInitCurrentListRef.current = true;
 
-      console.debug("[TaskProvider] finished load: lists:", loadedTaskLists.map(l => l.title), "current:", restoredCurrentListId);
+      // console.debug("[TaskProvider] finished load: lists:", loadedTaskLists.map(l => l.title), "current:", restoredCurrentListId);
 
       // Reschedule notifications for loaded tasks
       await Notifications.cancelAllScheduledNotificationsAsync();
@@ -297,7 +290,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const deleteTaskList = (id: string) => {
     // cancel notifications for tasks in that list
     const tasksToCancel = tasks.filter(t => t.tasklistId === id);
-    tasksToCancel.forEach(t => Notifications.cancelScheduledNotificationAsync(t.id).catch(() => { }));
+    tasksToCancel.forEach(t =>
+      Notifications.cancelScheduledNotificationAsync(t.id).catch(() => { })
+    );
 
     // remove tasks in that list
     setTasks(prev => prev.filter(t => t.tasklistId !== id));

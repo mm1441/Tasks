@@ -1,17 +1,32 @@
+// components/DueDateSectionList.tsx
 import React from 'react';
 import { SectionList, Text, View, StyleSheet, ViewStyle } from 'react-native';
-import { Task } from '../types/Task';
+import type { Task } from '../types/Task';
 import TaskCard from './TaskCard';
 import { buildDueDateSections } from '../utils/buildDueDateSections';
+
+type Section = {
+  title: string;
+  data: Task[];
+};
 
 interface Props {
   tasks: Task[];
   style?: ViewStyle;
-  onDelete: (id: string, title: string) => void;
+  onPress: (id: string) => void;
+  onLongPress: (id: string) => void;
+  selectedIds?: string[]; // optional to display selected state
+  selectionMode?: boolean;
 }
 
-export default function DueDateSectionList({ tasks, onDelete }: Props) {
-  const sections = buildDueDateSections(tasks);
+export default function DueDateSectionList({
+  tasks,
+  onPress,
+  onLongPress,
+  selectedIds = [],
+  selectionMode
+}: Props) {
+  const sections: Section[] = buildDueDateSections(tasks);
 
   return (
     <SectionList
@@ -25,7 +40,10 @@ export default function DueDateSectionList({ tasks, onDelete }: Props) {
         <TaskCard
           item={item}
           showDragHandle={false}
-          onLongPress={onDelete}
+          onPress={() => onPress(item.id)}
+          onLongPress={() => onLongPress(item.id)}
+          selected={selectedIds.includes(item.id)}
+          selectionMode={selectionMode}
         />
       )}
     />

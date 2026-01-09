@@ -15,14 +15,26 @@ type RootStackParamList = {
 
 type TaskCardProps = {
   item: Task;
-  onLongPress: (id: string, title: string) => void;
+  onPress?: () => void;
+  onLongPress?: (id: string) => void;
   showDragHandle?: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
   isActive?: boolean;
+  selected?: boolean;
+  selectionMode?: boolean;
 };
 
-function TaskCardInner({ item, onLongPress: onDelete, showDragHandle = false, onDragStart, onDragEnd, isActive }: TaskCardProps) {
+function TaskCardInner({ 
+  item, 
+  onPress, 
+  onLongPress, 
+  showDragHandle = false, 
+  onDragStart, 
+  onDragEnd, 
+  isActive, 
+  selected 
+}: TaskCardProps) {
   const { updateTask } = useTasks();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -54,8 +66,8 @@ function TaskCardInner({ item, onLongPress: onDelete, showDragHandle = false, on
         styles.taskCard,
         isActive && styles.draggingCard,
       ]}
-      onPress={() => navigation.navigate("EditTask", { taskId: item.id })}
-      onLongPress={() => onDelete(item.id, item.title)}
+      onPress={onPress}
+      onLongPress={() => onLongPress(item.id)}
       activeOpacity={0.95}
     >
       <TouchableOpacity
@@ -96,24 +108,29 @@ function TaskCardInner({ item, onLongPress: onDelete, showDragHandle = false, on
         </TouchableOpacity>
       )}
 
+      {selected && (
+        <View style={styles.checkWrap}>
+          <View style={styles.checkCircle}>
+            <Ionicons name="checkmark" size={16} color="#fff" />
+          </View>
+        </View>
+      )}
+
     </TouchableOpacity>
   );
 }
 
-// Custom comparator: re-render only when important fields change
 function areEqual(prev: TaskCardProps, next: TaskCardProps) {
-  // Always re-render if the item identity changed
   if (prev.item.id !== next.item.id) return false;
-
-  // Re-render on visible state changes we care about
   if (prev.item.isCompleted !== next.item.isCompleted) return false;
   if (prev.isActive !== next.isActive) return false;
   if (prev.showDragHandle !== next.showDragHandle) return false;
-
-  // If parent changed handlers (rare) but we can ignore function identity in many cases.
-  // If you pass new inline callbacks each render and want to re-render, include checks here.
-  return true; // props considered equal -> skip render
+  if (!!prev.selected !== !!next.selected) return false;
+  if (!!prev.selectionMode !== !!next.selectionMode) return false;
+  // If none of the above changed, treat props as equal -> skip render
+  return true;
 }
+
 
 // Export memoized component
 const TaskCard = React.memo(TaskCardInner, areEqual);
@@ -171,5 +188,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
     backgroundColor: '#f9f9f9',
+  },
+  checkWrap: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+  },
+  checkCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#2ecc71', // green
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
