@@ -360,7 +360,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       );
 
       if (result.success) {
-        console.debug(result)
+        // console.debug(result)
         // Apply sync results to local state
         setTasks(prev => {
           let updated = [...prev];

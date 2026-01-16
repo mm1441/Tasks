@@ -32,6 +32,8 @@ export class SyncService {
 
       onProgress?.('Starting sync...');
 
+      // ToDo: Add task lists from cloud that are not present locally getTaskLists(), for each new taskList => getTasks(newTaskList)
+
       // Step 1: Get or create Google task list
       let googleTaskListId = localTaskList.googleId;
       console.debug(`googleTaskListId: ${googleTaskListId ?? '(none)'}`);
@@ -159,7 +161,6 @@ export class SyncService {
         console.debug(`Skipping google task with no id (title='${googleTask.title ?? ''}')`);
         continue;
       }
-
       const localTask = localTasksByGoogleId.get(googleTask.id);
       if (localTask) {
         console.debug(`Conflict for task id=${googleTask.id}, title='${googleTask.title ?? localTask.title}'`);

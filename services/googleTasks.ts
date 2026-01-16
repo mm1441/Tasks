@@ -119,7 +119,6 @@ export class GoogleTasksService {
     });
   }
 
-  // Fixed: DELETE endpoint can return empty body; apiRequest now handles that gracefully.
   async deleteTask(taskListId: string, taskId: string): Promise<void> {
     await this.apiRequest(`/lists/${taskListId}/tasks/${taskId}`, {
       method: 'DELETE',
