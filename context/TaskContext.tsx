@@ -1,18 +1,25 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
-import type { Task } from "../types/Task";
 import * as Notifications from "expo-notifications";
 import { SchedulableTriggerInputTypes } from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
+import type { Task } from "../types/Task";
 import { TaskList } from "../types/TaskList";
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { SyncService, SyncResult } from "../services/syncService";
+import { WidgetStorage } from 'android-glance-widget-expo';
+import { Platform } from 'react-native';
+
+export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
 
 interface TaskContextType {
   tasks: Task[];
   taskLists: TaskList[];
   currentTaskList: TaskList | null;
   currentTaskListId: string | null;
+  syncStatus: SyncStatus;
+  syncError: string | null;
   addTask: (task: Omit<Task, "id" | "createdAt" | "lastModified">) => Promise<void>;
   updateTask: (task: Task) => void;
   deleteTask: (id: string) => void;
@@ -21,6 +28,7 @@ interface TaskContextType {
   addTaskList: (taskList: Omit<TaskList, "id" | "createdAt" | "lastModified">) => void;
   updateTaskList: (taskList: TaskList) => void;
   deleteTaskList: (id: string) => void;
+  syncWithGoogle: (accessToken: string, onProgress?: (message: string) => void) => Promise<SyncResult>;
 }
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
@@ -33,11 +41,14 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [taskLists, setTaskLists] = useState<TaskList[]>([]);
   const [currentTaskListId, setCurrentTaskListId] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
   }, []);
 
+  // Persist tasks whenever they change
   useEffect(() => {
     if (isLoading) return;
     (async () => {
@@ -50,7 +61,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     })();
   }, [tasks, isLoading]);
 
-  // Persist taskLists whenever they change (but not during initial load)
+  // Persist taskLists whenever they change
   useEffect(() => {
     if (isLoading) return;
     (async () => {
@@ -63,7 +74,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     })();
   }, [taskLists, isLoading]);
 
-  // Persist currentTaskListId whenever it changes (but not during initial load)
+  // Persist currentTaskListId whenever it changes
   useEffect(() => {
     if (isLoading) return;
     (async () => {
@@ -79,6 +90,30 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
     })();
   }, [currentTaskListId, isLoading]);
+
+  // Update widget whenever tasks or current list change
+  useEffect(() => {
+    if (isLoading || Platform.OS !== 'android') return;
+
+    (async () => {
+      try {
+        const filteredTasks = tasks.filter(t => t.tasklistId === currentTaskListId && !t.isDeleted && !t.isCompleted);
+        // Serialize (limit to key fields to avoid bloat; add more if needed)
+        const tasksData = filteredTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          dueDate: t.dueDate,
+          isCompleted: t.isCompleted,
+        }));
+        console.log("[Widget] Updating with tasks:", JSON.stringify(tasksData));
+        await WidgetStorage.set('tasks', JSON.stringify(tasksData));
+        await WidgetStorage.updateWidget('HomeReceiver');
+        console.debug("[TaskProvider] Updated widget with tasks:", tasksData.length);
+      } catch (e) {
+        console.error("Failed to update widget:", e);
+      }
+    })();
+  }, [tasks, currentTaskListId, isLoading]);
 
   const loadData = async () => {
     try {
@@ -111,16 +146,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       // apply restored id only if currentTaskListId is still null (won't overwrite user selection)
       setCurrentTaskListId(prev => {
         if (prev !== null) {
-          // console.debug("[TaskProvider] loadData skipped restoring currentTaskListId because runtime value exists:", prev);
           return prev;
         }
-        // console.debug("[TaskProvider] loadData restored currentTaskListId:", restoredCurrentListId);
         return restoredCurrentListId;
       });
 
-      // console.debug("[TaskProvider] finished load: lists:", loadedTaskLists.map(l => l.title), "current:", restoredCurrentListId);
-
-      // Reschedule notifications for loaded tasks
       await Notifications.cancelAllScheduledNotificationsAsync();
       loadedTasks.forEach(task => {
         if (task.dueDate && new Date(task.dueDate) > new Date()) {
@@ -139,24 +169,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const setCurrentTaskList = (id: string | null) => {
     try {
-      console.debug("[TaskProvider] setCurrentTaskList called with:", id);
-
-      // Normalize id -> nextId
       let nextId = id;
-
-      // If attempting to set null but lists exist, keep current (ignore null)
       if (id === null && taskLists.length > 0) {
         console.warn("[TaskProvider] Ignoring setCurrentTaskList(null) because taskLists exist. Keeping previous:", currentTaskListId);
         return;
       }
-
-      // If provided id doesn't exist, fall back to first list
       if (id !== null && !taskLists.some(tl => tl.id === id)) {
         nextId = taskLists.length > 0 ? taskLists[0].id : null;
         console.warn(`[TaskProvider] Provided id "${id}" not found; falling back to "${nextId}"`);
       }
-
-      // Apply only if changed
       setCurrentTaskListId(prev => {
         if (prev === nextId) return prev;
         console.debug("[TaskProvider] currentTaskListId changing:", prev, "=>", nextId);
@@ -170,54 +191,42 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const updateTask = async (updatedTask: Task) => {
     try {
-      // find previous task snapshot
       const prevTask = tasks.find(t => t.id === updatedTask.id) ?? null;
-      let currentNotificationId: string | null = prevTask?.notificationId ?? null;
+      let existingNotificationId: string | null = prevTask?.notificationId ?? null;
 
-      // If task is now completed -> cancel existing notification (if any) and clear id
       if (updatedTask.isCompleted) {
-        if (currentNotificationId) {
-          await Notifications.cancelScheduledNotificationAsync(currentNotificationId).catch(() => { });
-          currentNotificationId = null;
+        if (existingNotificationId) {
+          await Notifications.cancelScheduledNotificationAsync(existingNotificationId).catch(() => { });
+          existingNotificationId = null;
         }
       } else {
-        // Task is not completed -> ensure a notification is scheduled if dueDate is in the future
-
-        const prevDueTs = prevTask?.dueDate ? new Date(prevTask.dueDate).getTime() : null;
-        const newDueTs = updatedTask.dueDate ? new Date(updatedTask.dueDate).getTime() : null;
-        const dueChanged = prevDueTs !== newDueTs;
-
-        const dueInFuture = updatedTask.dueDate && new Date(updatedTask.dueDate) > new Date();
+        const prevDue = prevTask?.dueDate ? new Date(prevTask.dueDate).getTime() : null;
+        const newDue = updatedTask.dueDate ? new Date(updatedTask.dueDate).getTime() : null;
+        const dueChanged = prevDue !== newDue;
+        const dueInFuture = updatedTask.dueDate && (new Date(updatedTask.dueDate) > new Date());
 
         if (dueInFuture) {
-          // If there is an existing notification and due did not change, keep it.
-          if (currentNotificationId && !dueChanged) {
-            // nothing to do
-          } else {
-            // cancel old one (if any) and create a new one
-            if (currentNotificationId) {
-              await Notifications.cancelScheduledNotificationAsync(currentNotificationId).catch(() => { });
-              currentNotificationId = null;
+          if (!existingNotificationId || dueChanged) {
+            if (existingNotificationId) {
+              await Notifications.cancelScheduledNotificationAsync(existingNotificationId).catch(() => { });
+              existingNotificationId = null;
             }
             const newNotifId = await scheduleNotification(updatedTask).catch(() => null);
-            currentNotificationId = newNotifId ?? null;
+            existingNotificationId = newNotifId ?? null;
           }
         } else {
           // no future due date -> cancel any existing notification
-          if (currentNotificationId) {
-            await Notifications.cancelScheduledNotificationAsync(currentNotificationId).catch(() => { });
-            currentNotificationId = null;
+          if (existingNotificationId) {
+            await Notifications.cancelScheduledNotificationAsync(existingNotificationId).catch(() => { });
+            existingNotificationId = null;
           }
         }
       }
-
-      // Persist the updated task including notificationId and lastModified
       const taskToStore: Task = {
         ...updatedTask,
-        notificationId: currentNotificationId,
+        notificationId: existingNotificationId,
         lastModified: new Date().toISOString(),
       };
-
       setTasks(prev => prev.map(t => t.id === taskToStore.id ? taskToStore : t));
     } catch (err) {
       console.error("Failed to update task (notification handling):", err);
@@ -261,7 +270,16 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const reorderTasks = (newTasks: Task[]) => setTasks(newTasks);
 
   const deleteTask = (id: string) => {
-    setTasks(prev => prev.filter(t => t.id !== id));
+    const task = tasks.find(t => t.id === id);
+    if (task?.googleId) {
+      // Mark as deleted instead of removing (for sync)
+      setTasks(prev => prev.map(t =>
+        t.id === id ? { ...t, isDeleted: true, lastModified: new Date().toISOString() } : t
+      ));
+    } else {
+      // No Google ID, safe to delete immediately
+      setTasks(prev => prev.filter(t => t.id !== id));
+    }
     Notifications.cancelScheduledNotificationAsync(id).catch(() => { });
   };
 
@@ -322,6 +340,109 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const syncWithGoogle = async (
+    accessToken: string,
+    onProgress?: (message: string) => void
+  ): Promise<SyncResult> => {
+    if (!currentTaskList) {
+      throw new Error('No task list selected');
+    }
+
+    setSyncStatus('syncing');
+    setSyncError(null);
+
+    try {
+      const syncService = new SyncService(accessToken);
+      const result = await syncService.syncTaskList(
+        currentTaskList,
+        tasks,
+        onProgress
+      );
+
+      if (result.success) {
+        console.debug(result)
+        // Apply sync results to local state
+        setTasks(prev => {
+          let updated = [...prev];
+
+          // Update tasks that were modified from cloud
+          if (result.updatedTasks) {
+            result.updatedTasks.forEach(cloudTask => {
+              const index = updated.findIndex(localTask => localTask.googleId === cloudTask.googleId);
+              if (index >= 0) {
+                updated[index] = cloudTask;
+              }
+            });
+          }
+
+          // Add tasks from cloud
+          if (result.addedTasks) {
+            result.addedTasks.forEach(newTask => {
+              if (!updated.some(t => t.googleId === newTask.googleId)) {
+                updated.push(newTask);
+              }
+            });
+          }
+
+          // Update Google IDs for tasks that were created locally
+          if (result.createdTasks) {
+            result.createdTasks.forEach(({ localId, googleId }) => {
+              const index = updated.findIndex(t => t.id === localId);
+              if (index >= 0) {
+                updated[index] = { ...updated[index], googleId };
+              }
+            });
+          }
+
+          // Mark tasks as deleted that were deleted on cloud
+          if (result.deletedTasks) {
+            result.deletedTasks.forEach(taskId => {
+              const index = updated.findIndex(t => t.id === taskId);
+              if (index >= 0) {
+                updated[index] = { ...updated[index], isDeleted: true };
+              }
+            });
+          }
+
+          return updated;
+        });
+
+        // Update task list with Google ID if needed
+        if (result.taskListGoogleId && currentTaskList.googleId !== result.taskListGoogleId) {
+          setTaskLists(prev => prev.map(tl =>
+            tl.id === currentTaskList.id
+              ? { ...tl, googleId: result.taskListGoogleId!, googleUpdated: new Date().toISOString() }
+              : tl
+          ));
+        }
+
+        setSyncStatus('success');
+        // Reset to idle after 2 seconds
+        setTimeout(() => setSyncStatus('idle'), 2000);
+      } else {
+        setSyncStatus('error');
+        setSyncError(result.error || 'Sync failed');
+        // Reset to idle after 5 seconds
+        setTimeout(() => {
+          setSyncStatus('idle');
+          setSyncError(null);
+        }, 5000);
+      }
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setSyncStatus('error');
+      setSyncError(errorMessage);
+      // Reset to idle after 5 seconds
+      setTimeout(() => {
+        setSyncStatus('idle');
+        setSyncError(null);
+      }, 5000);
+      throw error;
+    }
+  };
+
   // Derived object for convenience
   const currentTaskList = useMemo(() => taskLists.find(tl => tl.id === currentTaskListId) ?? null, [taskLists, currentTaskListId]);
 
@@ -333,6 +454,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       taskLists,
       currentTaskList,
       currentTaskListId,
+      syncStatus,
+      syncError,
       setCurrentTaskList,
       addTask,
       updateTask,
@@ -340,7 +463,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       reorderTasks,
       addTaskList,
       updateTaskList,
-      deleteTaskList
+      deleteTaskList,
+      syncWithGoogle,
     }}>
       {children}
     </TaskContext.Provider>

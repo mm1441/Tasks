@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { TaskProvider } from "./context/TaskContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
+import { GoogleAuthProvider } from "./context/GoogleAuthContext";
 import { DefaultTheme as NavDefault, DarkTheme as NavDark } from "@react-navigation/native";
 import AddTaskScreen from "./screens/NewTaskScreen";
 import EditTaskScreen from "./screens/EditTaskScreen";
@@ -108,9 +109,11 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
-        <TaskProvider>
-          <NavigationInner />
-        </TaskProvider>
+        <GoogleAuthProvider>
+          <TaskProvider>
+            <NavigationInner />
+          </TaskProvider>
+        </GoogleAuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

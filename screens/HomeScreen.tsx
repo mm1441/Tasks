@@ -15,6 +15,9 @@ import {
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { useTasks } from "../context/TaskContext";
+import { useTheme } from "../context/ThemeContext";
+import { useGoogleAuth } from "../context/GoogleAuthContext";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { TopBar } from "../components/TopBar";
 import { DrawerActions } from "@react-navigation/native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +27,9 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import HorizontalScrollWithUnderline from "../components/HorizontalScrollWithUnderline";
 import DueDateSectionList from "../components/DueDateSectionList";
+import * as Google from 'expo-auth-session/providers/google';
+import { GoogleAuthService } from "../services/googleAuth";
+import * as WebBrowser from 'expo-web-browser';
 
 type HomeScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, "Home">;
@@ -31,25 +37,30 @@ type HomeScreenProps = {
 type SortOption = 'custom' | 'dueDateAsc' | 'dueDateDesc' | 'createdAtAsc' | 'createdAtDesc' | null;
 const { width } = Dimensions.get('window');
 const { height } = Dimensions.get('window');
+WebBrowser.maybeCompleteAuthSession();
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const {
     tasks,
+    addTask,
+    deleteTask,
+    reorderTasks,
     taskLists,
+    setCurrentTaskList,
+    addTaskList,
     currentTaskList,
     currentTaskListId,
-    setCurrentTaskList,
-    addTask,
-    addTaskList,
-    deleteTask,
-    reorderTasks
+    syncWithGoogle,
+    syncStatus,
+    syncError,
   } = useTasks();
+  const { theme } = useTheme();
+  const { isAuthenticated, isLoading: authLoading, signIn, getAccessToken } = useGoogleAuth();
+  const { isOnline } = useNetworkStatus();
+  const styles = makeStyles(theme);
 
   const [sortOption, setSortOption] = useState<SortOption>('custom');
-
-  // local UI state: show/hide completed tasks
   const [showCompleted, setShowCompleted] = useState<boolean>(true);
-
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const isSelectionMode = selectedTaskIds.length > 0;
   const clearSelection = useCallback(() => setSelectedTaskIds([]), []);
@@ -59,6 +70,25 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [multiTitle, setMultiTitle] = useState('');
   const [multiAdded, setMultiAdded] = useState<string[]>([]);
   const multiInputRef = useRef<TextInput | null>(null);
+
+  // const authService = GoogleAuthService.getInstance();
+
+  // useEffect(() => {
+  //   if (response?.type === 'success') {
+  //     const { authentication } = response;
+  //     if (authentication) {
+  //       // Send the result to your service
+  //       authService.setTokensFromAuthResult(authentication)
+  //         .then(() => {
+  //           console.log('Login successful, tokens saved!');
+  //           // Navigate to home or whatever
+  //         })
+  //         .catch(err => console.error('Failed to save tokens:', err));
+  //     }
+  //   } else if (response?.type === 'error') {
+  //     console.error('Auth error:', response.error);
+  //   }
+  // }, [response]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -78,19 +108,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     }
   }, [taskLists, currentTaskList]);
 
-  // displayedTasks: filter by list, optionally hide completed, then apply sort
   const displayedTasks = useMemo(() => {
     if (!currentTaskListId) return [];
-
-    // base: tasks for current list
     let listTasks = tasks.filter(t => t.tasklistId === currentTaskListId);
-
-    // filter out completed tasks if showCompleted is false
-    if (!showCompleted) {
+    if (!showCompleted) 
       listTasks = listTasks.filter(t => !t.isCompleted);
-    }
-
-    // apply sorting when requested (non-destructive)
     switch (sortOption) {
       case 'dueDateAsc':
         listTasks = listTasks.slice().sort((a, b) => {
@@ -100,7 +122,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
         });
         break;
-
       case 'dueDateDesc':
         listTasks = listTasks.slice().sort((a, b) => {
           if (!a.dueDate && !b.dueDate) return 0;
@@ -109,18 +130,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
         });
         break;
-
       case 'createdAtAsc':
         listTasks = listTasks.slice().sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         break;
-
       case 'createdAtDesc':
         listTasks = listTasks.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         break;
-
       case 'custom':
       default:
-        // keep original order
         break;
     }
 
@@ -147,12 +164,113 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     ]);
   }, [deleteTask]);
 
-  const handleLongPress = useCallback((id: string) => {
-    toggleSelectTask(id);
-  }, [toggleSelectTask]);
-
   const selectSort = (option: SortOption) => {
     setSortOption(option);
+  };
+
+  const handleSync = useCallback(async () => {
+    if (!isOnline) {
+      Alert.alert('Offline', 'You need to be connected to the internet to sync.');
+      return;
+    }
+
+    if (!isAuthenticated) {
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in with Google to sync your tasks.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign In',
+            onPress: async () => {
+              try {
+                // console.debug(request?.clientId)
+                // console.debug(`Redirect URI: ${request?.redirectUri}`)
+                //promptAsync(); // new
+                await signIn();
+                const token = await getAccessToken();
+                // After sign in, trigger sync
+                if (token) {
+                  console.debug('token', token);
+                  handleSyncWithToken(token);
+                }
+              } catch (error) {
+                Alert.alert('Sign In Failed', error instanceof Error ? error.message : 'Failed to sign in');
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        Alert.alert('Error', 'Failed to get access token. Please sign in again.');
+        return;
+      }
+      console.debug(token)
+      await handleSyncWithToken(token);
+    } catch (error) {
+      Alert.alert('Sync Failed', error instanceof Error ? error.message : 'Failed to sync tasks');
+    }
+  }, [isOnline, isAuthenticated, signIn, getAccessToken]);
+
+  const handleSyncWithToken = async (accessToken: string) => {
+    try {
+      await syncWithGoogle(accessToken, (message) => {
+        console.log('Sync progress:', message);
+      });
+      if (syncError) {
+        Alert.alert('Sync Error', syncError);
+      }
+    } catch (error) {
+      Alert.alert('Sync Failed', error instanceof Error ? error.message : 'Failed to sync tasks');
+    }
+  };
+
+  const shareTaskList = async () => {
+    if (!currentTaskList || displayedTasks.length === 0) {
+      Alert.alert('No tasks', 'There are no tasks to share in this list.');
+      return;
+    }
+
+    let tasksToShare = displayedTasks;
+    const selectedTasks = displayedTasks.filter(t => selectedTaskIds.includes(t.id));
+    if (selectedTasks.length !== 0) {
+      tasksToShare = selectedTasks;
+    }
+
+    const taskLines = tasksToShare.map(task => {
+      let line = task.title;
+
+      if (task.description) {
+        line += ` - ${task.description}`;
+      }
+
+      if (task.dueDate) {
+        const dueDate = new Date(task.dueDate);
+        const formattedDate = dueDate.toLocaleDateString(undefined, {
+          month: 'long',
+          day: 'numeric',
+          year: dueDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
+        });
+        line += ` (Due: ${formattedDate})`;
+      }
+
+      return line;
+    });
+
+    const shareText = `${currentTaskList.title}\n\n${taskLines.join('\n')}`;
+
+    try {
+      await Share.share({
+        message: shareText,
+      });
+    } catch (error) {
+      Alert.alert('Sharing failed', 'Unable to share the task list.');
+    }
   };
 
   const addMultiTask = async () => {
@@ -194,7 +312,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             navigation.navigate('EditTask', { taskId: item.id });
           }
         }}
-        onLongPress={() => handleLongPress(item.id)}
+        onLongPress={() => toggleSelectTask(item.id)}
         showDragHandle={true}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
@@ -212,11 +330,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     reorderTasks(copy);
   };
 
-  // compute filter menu items so label updates with showCompleted
   const filterMenuItems = [
     { label: 'Custom sort', onPress: () => selectSort('custom') },
     { label: 'Sort by due date ↑', onPress: () => selectSort('dueDateAsc') },
-    // other sorts...
     { label: 'Sort by creation ↓', onPress: () => selectSort('createdAtDesc') },
     {
       label: showCompleted ? 'Hide completed tasks' : 'Show completed tasks',
@@ -234,47 +350,19 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               style={styles.contextIcon}
               accessibilityLabel="Cancel selection"
             >
-              <Ionicons name="close" size={24} />
+              <Ionicons name="close" size={24} color={theme.text} />
             </TouchableOpacity>
 
-            <Text style={{ fontSize: 16, fontWeight: '600', marginLeft: 8 }}>
+            <Text style={[styles.contextText, { fontSize: 16, fontWeight: '600', marginLeft: 8 }]}>
               {selectedTaskIds.length} selected
             </Text>
 
             <View style={styles.contextActions}>
               <TouchableOpacity
                 style={styles.contextButton}
-                onPress={async () => {
-                  const selectedTasks = tasks.filter(t => selectedTaskIds.includes(t.id));
-                  if (selectedTasks.length === 0) return;
-
-                  const taskLines = selectedTasks.map(task => {
-                    let line = `• ${task.title}`;
-                    if (task.description) line += ` - ${task.description}`;
-                    if (task.dueDate) {
-                      const dueDate = new Date(task.dueDate);
-                      const formattedDate = dueDate.toLocaleDateString(undefined, {
-                        month: 'long',
-                        day: 'numeric',
-                        year: dueDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-                      });
-                      line += ` (Due: ${formattedDate})`;
-                    }
-                    return line;
-                  });
-
-                  const shareText = `${currentTaskList?.title ?? ''}\n\n${taskLines.join('\n')}`;
-
-                  try {
-                    await Share.share({ message: shareText });
-                  } catch (err) {
-                    console.debug('Share cancelled/failed', err);
-                  } finally {
-                    clearSelection();
-                  }
-                }}
+                onPress= {() => { shareTaskList(); }} // ToDo: Share only selected tasks
               >
-                <Ionicons name="share-outline" size={22} />
+                <Ionicons name="share-outline" size={22} color={theme.text} />
                 <Text style={styles.contextText}>Share</Text>
               </TouchableOpacity>
 
@@ -308,53 +396,31 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             title={'My Tasks'}
             leftIcon={require('../assets/default-profile.png')}
             onLeftIconPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-            rightIcon1={<Ionicons name="sync" size={20} />}
-            rightIcon2={<Ionicons name="filter" size={20} />}
-            rightIcon3={<Ionicons name="ellipsis-vertical-outline" size={20} />}
+            rightIcon1={
+              <Ionicons 
+                name={syncStatus === 'syncing' ? 'sync' : 'sync-outline'} 
+                size={20} 
+                color={
+                  !isOnline 
+                    ? theme.muted 
+                    : syncStatus === 'syncing' 
+                    ? theme.primary 
+                    : syncStatus === 'error' 
+                    ? '#FF3B30' 
+                    : theme.text
+                }
+              />
+            }
+            onRightIcon1Press={handleSync}
+            rightIcon2={<Ionicons name="filter" size={20} color={theme.text}/>}
+            rightIcon3={<Ionicons name="ellipsis-vertical-outline" size={20} color={theme.text}/>}
             filterMenuItems={filterMenuItems}
             otherMenuItems={[
+              // { label: 'Clear completed tasks', onPress: () => { /* implement if you want hard delete */ } },
+              // { label: 'View completed tasks', onPress: () => { /* optional */ } },
               { label: 'Add multiple tasks', onPress: () => setMultiModalVisible(true) },
-              { label: 'Clear completed tasks', onPress: () => { /* implement if you want hard delete */ } },
-              { label: 'View completed tasks', onPress: () => { /* optional */ } },
-              { label: 'Manage task lists', onPress: () => { navigation.navigate('TaskList') } },
-              {
-                label: 'Share task list', onPress: async () => {
-                  if (!currentTaskList || displayedTasks.length === 0) {
-                    Alert.alert('No tasks', 'There are no tasks to share in this list.');
-                    return;
-                  }
-
-                  const taskLines = displayedTasks.map(task => {
-                    let line = task.title;
-
-                    if (task.description) {
-                      line += ` - ${task.description}`;
-                    }
-
-                    if (task.dueDate) {
-                      const dueDate = new Date(task.dueDate);
-                      const formattedDate = dueDate.toLocaleDateString(undefined, {
-                        month: 'long',
-                        day: 'numeric',
-                        year: dueDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-                      });
-                      line += ` (Due: ${formattedDate})`;
-                    }
-
-                    return line;
-                  });
-
-                  const shareText = `${currentTaskList.title}\n\n${taskLines.join('\n')}`;
-
-                  try {
-                    await Share.share({
-                      message: shareText,
-                    });
-                  } catch (error) {
-                    Alert.alert('Sharing failed', 'Unable to share the task list.');
-                  }
-                }
-              },
+              { label: 'Manage task lists', onPress: () => { navigation.navigate('TaskList'); } },
+              { label: 'Share task list', onPress: () => { shareTaskList(); }}
             ]}
           />
         )}
@@ -393,11 +459,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
             {multiAdded.length !== 0 &&
               <View style={{ marginBottom: 12 }}>
-                <Text style={{ fontSize: 13, color: '#666' }}>
+                <Text style={{ fontSize: 13, color: theme.muted }}>
                   Added: {multiAdded.length}
                 </Text>
                 {multiAdded.length > 0 && (
-                  <Text style={{ marginTop: 6, color: '#444' }}>
+                  <Text style={{ marginTop: 6, color: theme.text }}>
                     {multiAdded.slice(0, 5).join(', ')}{multiAdded.length > 5 ? ` +${multiAdded.length - 5}` : ''}
                   </Text>
                 )}
@@ -444,7 +510,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             if (isSelectionMode) toggleSelectTask(id);
             else navigation.navigate('EditTask', { taskId: id });
           }}
-          onLongPress={(id: string) => handleLongPress(id)}
+          onLongPress={(id: string) => toggleSelectTask(id)}
         />
       ) : (
         <FlatList
@@ -456,10 +522,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               item={item}
               showDragHandle={false}
               onPress={() => {
-                if (isSelectionMode) toggleSelectTask(item.id);
-                else navigation.navigate('EditTask', { taskId: item.id });
+                if (isSelectionMode) 
+                  toggleSelectTask(item.id);
+                else 
+                  navigation.navigate('EditTask', { taskId: item.id });
               }}
-              onLongPress={() => handleLongPress(item.id)}
+              onLongPress={() => toggleSelectTask(item.id)}
               selected={selectedTaskIds.includes(item.id)}
               selectionMode={isSelectionMode}
             />
@@ -479,206 +547,210 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  tabsWrap: {
-    height: 72,
-    justifyContent: 'center',
-  },
-  tabItem: {
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  tabTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111',
-  },
-  tabMeta: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    tabsWrap: {
+      height: 72,
+      justifyContent: 'center',
+    },
+    tabItem: {
+      height: 56,
+      borderRadius: 12,
+      backgroundColor: theme.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.04,
+      shadowRadius: 4,
+      elevation: 1,
+    },
+    tabTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.text,
+    },
+    tabMeta: {
+      fontSize: 12,
+      color: theme.muted,
+      marginTop: 4,
+    },
 
-  underline: {
-    position: 'absolute',
-    bottom: 10,
-    width: 72,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#007AFF',
-  },
+    underline: {
+      position: 'absolute',
+      bottom: 10,
+      width: 72,
+      height: 3,
+      borderRadius: 2,
+      backgroundColor: theme.primary,
+    },
 
-  contextBar: {
-    height: 56,
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
-    elevation: 4,
-  },
+    contextBar: {
+      height: 56,
+      backgroundColor: theme.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.border,
+      elevation: 4,
+    },
 
-  contextIcon: {
-    padding: 8,
-  },
+    contextIcon: {
+      padding: 8,
+    },
 
-  contextActions: {
-    flexDirection: 'row',
-    marginLeft: 'auto',
-  },
+    contextActions: {
+      flexDirection: 'row',
+      marginLeft: 'auto',
+    },
 
-  contextButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 16,
-  },
+    contextButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginLeft: 16,
+    },
 
-  contextText: {
-    marginLeft: 6,
-    fontSize: 16,
-    fontWeight: '500',
-  },
+    contextText: {
+      marginLeft: 6,
+      fontSize: 16,
+      fontWeight: '500',
+      color: theme.text,
+    },
 
-  cancelButton: {
-    marginLeft: 8,
-    paddingHorizontal: 8,
-  },
-  cancelText: {
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  listContent: {
-    paddingVertical: 6,
-  },
-  taskCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  taskTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 4,
-  },
-  taskDescription: {
-    fontSize: 14,
-    color: '#666666',
-    marginBottom: 8,
-  },
-  taskDueDate: {
-    fontSize: 13,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#999999',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#bbbbbb',
-  },
-  addButton: {
-    position: 'absolute',
-    right: width * 0.1,
-    bottom: height * 0.1,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  addButtonText: {
-    fontSize: 32,
-    color: '#fff',
-    marginTop: -2,
-  },
-  actionRow: {
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    paddingVertical: 10,
-    borderRadius: 8
-  },
+    cancelButton: {
+      marginLeft: 8,
+      paddingHorizontal: 8,
+    },
+    cancelText: {
+      color: theme.primary,
+      fontWeight: '600',
+    },
+    listContent: {
+      paddingVertical: 6,
+    },
+    taskCard: {
+      backgroundColor: theme.surface,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 3,
+      elevation: 2,
+    },
+    taskTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 4,
+    },
+    taskDescription: {
+      fontSize: 14,
+      color: theme.muted,
+      marginBottom: 8,
+    },
+    taskDueDate: {
+      fontSize: 13,
+      color: theme.primary,
+      fontWeight: '500',
+    },
+    emptyContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    emptyText: {
+      fontSize: 20,
+      fontWeight: '600',
+      color: theme.muted,
+      marginBottom: 8,
+    },
+    emptySubtext: {
+      fontSize: 14,
+      color: theme.muted,
+    },
+    addButton: {
+      position: 'absolute',
+      right: width * 0.1,
+      bottom: height * 0.1,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: theme.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 6,
+      elevation: 6,
+    },
+    addButtonText: {
+      fontSize: 32,
+      color: '#fff',
+      marginTop: -2,
+    },
+    actionRow: {
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      backgroundColor: theme.surface,
+      paddingVertical: 10,
+      borderRadius: 8
+    },
 
-  actionButton: {
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#666',
-    borderRadius: 8
-  },
+    actionButton: {
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      borderWidth: 1,
+      borderColor: theme.border,
+      borderRadius: 8
+    },
 
-  actionText: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#000',
-  },
+    actionText: {
+      marginTop: 4,
+      fontSize: 14,
+      color: theme.text,
+    },
 
-  /* modal */
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end' },
-  modalButton: { paddingVertical: 8, paddingHorizontal: 12 },
-  modalPrimary: { backgroundColor: '#0b6efd', borderRadius: 8, marginLeft: 8 },
-  modalButtonText: { color: '#333', fontWeight: '600' },
-  modalPrimaryText: { color: '#fff' },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-});
+    /* modal */
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: theme.overlay,
+      justifyContent: 'center',
+      padding: 20,
+    },
+    modalCard: {
+      backgroundColor: theme.surface,
+      borderRadius: 12,
+      padding: 16,
+    },
+    modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12, color: theme.text },
+    input: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.border,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 12,
+      backgroundColor: theme.surface,
+      color: theme.text,
+    },
+    modalActions: { flexDirection: 'row', justifyContent: 'flex-end' },
+    modalButton: { paddingVertical: 8, paddingHorizontal: 12 },
+    modalPrimary: { backgroundColor: theme.primary, borderRadius: 8, marginLeft: 8 },
+    modalButtonText: { color: theme.text, fontWeight: '600' },
+    modalPrimaryText: { color: '#fff' },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: theme.overlay,
+      justifyContent: 'center',
+      padding: 20,
+    },
+  });

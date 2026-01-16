@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import Checkbox from "expo-checkbox";
 import { Ionicons } from "@expo/vector-icons";
 import { useTasks } from "../context/TaskContext";
+import { useTheme } from "../context/ThemeContext";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { Task } from "../types/Task";
@@ -36,7 +37,9 @@ function TaskCardInner({
   selected 
 }: TaskCardProps) {
   const { updateTask } = useTasks();
+  const { theme } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const styles = makeStyles(theme);
 
   const toggleComplete = (value: boolean) => {
     updateTask({ ...item, isCompleted: value });
@@ -58,7 +61,7 @@ function TaskCardInner({
     });
   };
 
-  const textStyle = item.isCompleted ? { textDecorationLine: "line-through" as const, color: "#999999" } : {};
+  const textStyle = item.isCompleted ? { textDecorationLine: "line-through" as const, color: theme.muted } : {};
 
   return (
     <TouchableOpacity
@@ -78,7 +81,7 @@ function TaskCardInner({
           value={item.isCompleted || false}
           onValueChange={toggleComplete}
           disabled={isActive}
-          color={item.isCompleted ? "#007AFF" : undefined}
+          color={item.isCompleted ? theme.primary : undefined}
         />
       </TouchableOpacity>
 
@@ -104,14 +107,14 @@ function TaskCardInner({
           onPressOut={onDragEnd}
           style={styles.dragHandle}
         >
-          <Ionicons name="reorder-three" size={24} color="#616161ff" />
+          <Ionicons name="reorder-three" size={24} color={theme.text} />
         </TouchableOpacity>
       )}
 
       {selected && (
         <View style={styles.checkWrap}>
           <View style={styles.checkCircle}>
-            <Ionicons name="checkmark" size={16} color="#fff" />
+            <Ionicons name="checkmark" size={16} ccolor={theme.text} />
           </View>
         </View>
       )}
@@ -127,8 +130,7 @@ function areEqual(prev: TaskCardProps, next: TaskCardProps) {
   if (prev.showDragHandle !== next.showDragHandle) return false;
   if (!!prev.selected !== !!next.selected) return false;
   if (!!prev.selectionMode !== !!next.selectionMode) return false;
-  // If none of the above changed, treat props as equal -> skip render
-  return true;
+  return true; // equal -> skip render
 }
 
 
@@ -136,70 +138,71 @@ function areEqual(prev: TaskCardProps, next: TaskCardProps) {
 const TaskCard = React.memo(TaskCardInner, areEqual);
 export default TaskCard;
 
-const styles = StyleSheet.create({
-  taskCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  checkboxWrapper: {
-    padding: 10,  // Larger touch area for checkbox
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  content: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  taskTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1a1a1a",
-    marginBottom: 4,
-  },
-  taskDescription: {
-    fontSize: 14,
-    color: "#666666",
-    marginBottom: 8,
-  },
-  taskDueDate: {
-    fontSize: 13,
-    color: "#007AFF",
-    fontWeight: "500",
-  },
-  taskDueDatePast: {
-    color: "#d32f2f", 
-  },
-  dragHandle: {
-    marginLeft: 12,
-    padding: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  draggingCard: {
-    shadowOpacity: 0,
-    elevation: 0,
-    backgroundColor: '#f9f9f9',
-  },
-  checkWrap: {
-    position: 'absolute',
-    right: 12,
-    top: 12,
-  },
-  checkCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#2ecc71', // green
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    taskCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.surface,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 3,
+      elevation: 2,
+    },
+    checkboxWrapper: {
+      padding: 10,  // Larger touch area for checkbox
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    content: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    taskTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: theme.text,
+      marginBottom: 4,
+    },
+    taskDescription: {
+      fontSize: 14,
+      color: theme.muted,
+      marginBottom: 8,
+    },
+    taskDueDate: {
+      fontSize: 13,
+      color: theme.primary,
+      fontWeight: "500",
+    },
+    taskDueDatePast: {
+      color: "#d32f2f", 
+    },
+    dragHandle: {
+      marginLeft: 12,
+      padding: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    draggingCard: {
+      shadowOpacity: 0,
+      elevation: 0,
+      backgroundColor: theme.subtle,
+    },
+    checkWrap: {
+      position: 'absolute',
+      right: 12,
+      top: 12,
+    },
+    checkCircle: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: '#2ecc71', // green
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+  });

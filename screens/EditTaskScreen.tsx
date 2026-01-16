@@ -9,6 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { useTasks } from "../context/TaskContext";
+import { useTheme } from "../context/ThemeContext";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
@@ -23,6 +24,8 @@ type EditTaskScreenProps = {
 
 export default function EditTaskScreen({ navigation, route }: EditTaskScreenProps) {
   const { tasks, updateTask } = useTasks();
+  const { theme } = useTheme();
+  const styles = makeStyles(theme);
   const taskId = route.params.taskId;
   const task = tasks.find((t) => t.id === taskId);
 
@@ -66,7 +69,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
   if (!task) {
     return (
       <View style={styles.container}>
-        <Text>Task not found</Text>
+        <Text style={{ color: theme.text }}>Task not found</Text>
       </View>
     );
   }
@@ -91,7 +94,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
             value={title}
             onChangeText={setTitle}
             placeholder="Enter task title"
-            placeholderTextColor="#999999"
+            placeholderTextColor={theme.muted}
             autoFocus
           />
         </View>
@@ -103,7 +106,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
             value={description}
             onChangeText={setDescription}
             placeholder="Enter description (optional)"
-            placeholderTextColor="#999999"
+            placeholderTextColor={theme.muted}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
@@ -118,7 +121,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
                 style={styles.input}
                 value={dueDate ? dueDate.replace("T", " ") : ""}
                 placeholder="Tap to select date & time (optional)"
-                placeholderTextColor="#999999"
+                placeholderTextColor={theme.muted}
                 editable={false}
               />
             </View>
@@ -138,65 +141,66 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: "#ffffff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1a1a1a",
-  },
-  cancelButton: {
-    fontSize: 16,
-    color: "#007AFF",
-  },
-  saveButton: {
-    fontSize: 16,
-    color: "#007AFF",
-    fontWeight: "600",
-  },
-  saveButtonDisabled: {
-    color: "#cccccc",
-  },
-  form: {
-    flex: 1,
-    padding: 20,
-  },
-  inputGroup: {
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666666",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: "#ffffff",
-    borderRadius: 10,
-    padding: 16,
-    fontSize: 16,
-    color: "#1a1a1a",
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-  },
-  textArea: {
-    height: 120,
-    paddingTop: 16,
-  },
-});
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingTop: 60,
+      paddingBottom: 16,
+      backgroundColor: theme.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    headerTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: theme.text,
+    },
+    cancelButton: {
+      fontSize: 16,
+      color: theme.primary,
+    },
+    saveButton: {
+      fontSize: 16,
+      color: theme.primary,
+      fontWeight: "600",
+    },
+    saveButtonDisabled: {
+      color: theme.muted,
+    },
+    form: {
+      flex: 1,
+      padding: 20,
+    },
+    inputGroup: {
+      marginBottom: 24,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: theme.muted,
+      marginBottom: 8,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    input: {
+      backgroundColor: theme.surface,
+      borderRadius: 10,
+      padding: 16,
+      fontSize: 16,
+      color: theme.text,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    textArea: {
+      height: 120,
+      paddingTop: 16,
+    },
+  });

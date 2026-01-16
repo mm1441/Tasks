@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
 
 type NoTasksFoundProps = {
   containerStyle?: ViewStyle;
@@ -12,6 +13,9 @@ const NoTasksFound: React.FC<NoTasksFoundProps> = ({
   textStyle,
   subtextStyle,
 }) => {
+  const { theme } = useTheme();
+  const styles = makeStyles(theme);
+
   return (
     <View style={[styles.emptyContainer, containerStyle]}>
       <Text style={[styles.emptyText, textStyle]}>No tasks yet</Text>
@@ -24,23 +28,24 @@ const NoTasksFound: React.FC<NoTasksFoundProps> = ({
 
 export default NoTasksFound;
 
-const styles = StyleSheet.create({
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#999999',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#bbbbbb',
-  },
-});
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    emptyContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    emptyText: {
+      fontSize: 20,
+      fontWeight: '600',
+      color: theme.muted,
+      marginBottom: 8,
+    },
+    emptySubtext: {
+      fontSize: 14,
+      color: theme.muted,
+    },
+  });
 
 // const styles = StyleSheet.create({
 //   emptyContainer: {

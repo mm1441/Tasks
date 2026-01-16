@@ -11,6 +11,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { TaskList } from '../types/TaskList';
+import { useTheme } from '../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 const ITEM_SPACING = 12;
@@ -25,6 +26,8 @@ interface Props {
 }
 
 const HorizontalScrollWithUnderline: FC<Props> = ({taskLists, selectedIndex, onActiveChange}) => {
+  const { theme } = useTheme();
+  const styles = makeStyles(theme);
   const listRef = useRef<FlatList>(null);
   const [activeIndex, setActiveIndex] = useState<number>(() =>
     typeof selectedIndex === 'number' && selectedIndex >= 0 ? selectedIndex : 0
@@ -194,34 +197,35 @@ const HorizontalScrollWithUnderline: FC<Props> = ({taskLists, selectedIndex, onA
   );
 };
 
-const styles = StyleSheet.create({
-  wrapper: {
-    height: 56,
-    justifyContent: 'center',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#0b6efd',
-    backgroundColor: '#FFF',
-  },
-  text: {
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  activeText: { color: '#0b6efd' },
-  inactiveText: { color: '#666' },
-  underline: {
-    position: 'absolute',
-    left: 0,
-    bottom: -1.5,
-    height: 4,
-    width: 0,
-    backgroundColor: 'transparent',
-    zIndex: 10,
-  },
-  underlineActive: {
-    width: ITEM_WIDTH,
-    backgroundColor: '#0b6efd',
-  },
-});
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    wrapper: {
+      height: 56,
+      justifyContent: 'center',
+      borderBottomWidth: 0.5,
+      borderBottomColor: theme.border,
+      backgroundColor: theme.surface,
+    },
+    text: {
+      fontSize: 16,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    activeText: { color: theme.primary },
+    inactiveText: { color: theme.muted },
+    underline: {
+      position: 'absolute',
+      left: 0,
+      bottom: -1.5,
+      height: 4,
+      width: 0,
+      backgroundColor: 'transparent',
+      zIndex: 10,
+    },
+    underlineActive: {
+      width: ITEM_WIDTH,
+      backgroundColor: theme.primary,
+    },
+  });
 
 export default HorizontalScrollWithUnderline;

@@ -50,6 +50,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [otherMenuVisible, setOtherMenuVisible] = useState(false);
   const { theme } = useTheme();
 
+  const styles = makeStyles(theme);
+
   const renderIcon = (icon?: IconProp, opts?: { left?: boolean }) => {
     if (!icon) return null;
     if (React.isValidElement(icon)) {
@@ -176,90 +178,92 @@ export const TopBar: React.FC<TopBarProps> = ({
 
 const SIDE_WIDTH = 72;
 
-const styles = StyleSheet.create({
-  container: {
-    height: 64,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e6e6e6',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    container: {
+      height: 64,
+      backgroundColor: theme.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+      justifyContent: 'center',
+      zIndex: 10,
+    },
 
-  leftArea: {
-    position: 'absolute',
-    left: 0,
-    width: SIDE_WIDTH,
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    paddingLeft: 8,
-  },
+    leftArea: {
+      position: 'absolute',
+      left: 0,
+      width: SIDE_WIDTH,
+      height: '100%',
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+      paddingLeft: 8,
+    },
 
-  rightArea: {
-    position: 'absolute',
-    right: 0,
-    width: SIDE_WIDTH,
-    height: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingRight: 8,
-  },
+    rightArea: {
+      position: 'absolute',
+      right: 0,
+      width: SIDE_WIDTH,
+      height: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      paddingRight: 8,
+    },
 
-  centerArea: {
-    position: 'absolute',
-    left: SIDE_WIDTH,
-    right: SIDE_WIDTH,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    centerArea: {
+      position: 'absolute',
+      left: SIDE_WIDTH,
+      right: SIDE_WIDTH,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
 
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111',
-    maxWidth: '100%',
-  },
+    title: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: theme.text,
+      maxWidth: '100%',
+    },
 
-  leftImage: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-  },
+    leftImage: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+    },
 
-  iconImage: {
-    width: 22,
-    height: 22,
-    borderRadius: 4,
-  },
+    iconImage: {
+      width: 22,
+      height: 22,
+      borderRadius: 4,
+    },
 
-  iconButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  menu: {
-    position: 'absolute',
-    top: 64,
-    right: 8,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  menuItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  menuText: {
-    fontSize: 16,
-  },
-});
+    iconButton: {
+      padding: 8,
+      borderRadius: 8,
+    },
+    overlay: {
+      flex: 1,
+      backgroundColor: 'transparent',
+    },
+    menu: {
+      position: 'absolute',
+      top: 64,
+      right: 8,
+      backgroundColor: theme.surface,
+      borderRadius: 8,
+      elevation: 6,
+      shadowColor: '#000',
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+    },
+    menuItem: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    menuText: {
+      fontSize: 16,
+      color: theme.text,
+    },
+  });
 export default TopBar;

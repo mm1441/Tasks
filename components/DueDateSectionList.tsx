@@ -4,6 +4,7 @@ import { SectionList, Text, View, StyleSheet, ViewStyle } from 'react-native';
 import type { Task } from '../types/Task';
 import TaskCard from './TaskCard';
 import { buildDueDateSections } from '../utils/buildDueDateSections';
+import { useTheme } from '../context/ThemeContext';
 
 type Section = {
   title: string;
@@ -26,6 +27,8 @@ export default function DueDateSectionList({
   selectedIds = [],
   selectionMode
 }: Props) {
+  const { theme } = useTheme();
+  const styles = makeStyles(theme);
   const sections: Section[] = buildDueDateSections(tasks);
 
   return (
@@ -50,15 +53,16 @@ export default function DueDateSectionList({
   );
 }
 
-const styles = StyleSheet.create({
-  listContent: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-});
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    listContent: {
+      padding: 16,
+    },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.muted,
+      marginTop: 16,
+      marginBottom: 8,
+    },
+  });

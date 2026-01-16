@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { useTasks } from "../context/TaskContext";
+import { useTheme } from "../context/ThemeContext";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { RootStackParamList } from "../App";
@@ -19,6 +20,8 @@ type AddTaskProps = NativeStackScreenProps<RootStackParamList, "AddTask">;
 
 export default function AddTaskScreen({ route, navigation }: AddTaskProps) {
   const { addTask } = useTasks();
+  const { theme } = useTheme();
+  const styles = makeStyles(theme);
   const { taskListId } = route.params ?? {};
 
   const [title, setTitle] = useState("");
@@ -68,7 +71,7 @@ export default function AddTaskScreen({ route, navigation }: AddTaskProps) {
             value={title}
             onChangeText={setTitle}
             placeholder="Enter task title"
-            placeholderTextColor="#999999"
+            placeholderTextColor={theme.muted}
             autoFocus
           />
         </View>
@@ -80,7 +83,7 @@ export default function AddTaskScreen({ route, navigation }: AddTaskProps) {
             value={description}
             onChangeText={setDescription}
             placeholder="Enter description (optional)"
-            placeholderTextColor="#999999"
+            placeholderTextColor={theme.muted}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
@@ -95,7 +98,7 @@ export default function AddTaskScreen({ route, navigation }: AddTaskProps) {
                 style={styles.input}
                 value={dueDate ? dueDate.replace("T", " ") : ""} // Display as YYYY-MM-DD HH:mm for readability
                 placeholder="Tap to select date & time (optional)"
-                placeholderTextColor="#999999"
+                placeholderTextColor={theme.muted}
                 editable={true}
               />
             </View>
@@ -114,65 +117,66 @@ export default function AddTaskScreen({ route, navigation }: AddTaskProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: "#ffffff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1a1a1a",
-  },
-  cancelButton: {
-    fontSize: 16,
-    color: "#007AFF",
-  },
-  saveButton: {
-    fontSize: 16,
-    color: "#007AFF",
-    fontWeight: "600",
-  },
-  saveButtonDisabled: {
-    color: "#cccccc",
-  },
-  form: {
-    flex: 1,
-    padding: 20,
-  },
-  inputGroup: {
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666666",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: "#ffffff",
-    borderRadius: 10,
-    padding: 16,
-    fontSize: 16,
-    color: "#1a1a1a",
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-  },
-  textArea: {
-    height: 120,
-    paddingTop: 16,
-  },
-});
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingTop: 60,
+      paddingBottom: 16,
+      backgroundColor: theme.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    headerTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: theme.text,
+    },
+    cancelButton: {
+      fontSize: 16,
+      color: theme.primary,
+    },
+    saveButton: {
+      fontSize: 16,
+      color: theme.primary,
+      fontWeight: "600",
+    },
+    saveButtonDisabled: {
+      color: theme.muted,
+    },
+    form: {
+      flex: 1,
+      padding: 20,
+    },
+    inputGroup: {
+      marginBottom: 24,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: theme.muted,
+      marginBottom: 8,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    input: {
+      backgroundColor: theme.surface,
+      borderRadius: 10,
+      padding: 16,
+      fontSize: 16,
+      color: theme.text,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    textArea: {
+      height: 120,
+      paddingTop: 16,
+    },
+  });

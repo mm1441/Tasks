@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBar } from '../components/TopBar';
 import { useTasks } from '../context/TaskContext';
+import { useTheme } from '../context/ThemeContext';
 
 
 export default function TaskListsScreen({ navigation }) {
@@ -32,6 +33,8 @@ export default function TaskListsScreen({ navigation }) {
     deleteTaskList,
     deleteTask
   } = useTasks();
+  const { theme } = useTheme();
+  const styles = makeStyles(theme);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
 
@@ -60,6 +63,45 @@ export default function TaskListsScreen({ navigation }) {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
   };
 
+  const shareTaskList = async () => {
+    const list = taskLists.find(l => l.id === selectedListId);
+    if (!list) return;
+
+    const listTasks = tasks.filter(t => t.tasklistId === list.id);
+    if (listTasks.length === 0) {
+      Alert.alert('Empty list', 'There are no tasks to share.');
+      return;
+    }
+
+    const taskLines = listTasks.map(task => {
+      let line = `• ${task.title}`;
+      if (task.description) line += ` - ${task.description}`;
+      if (task.dueDate) {
+        const dueDate = new Date(task.dueDate);
+        const formattedDate = dueDate.toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: dueDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
+        });
+        line += ` (Due: ${formattedDate})`;
+      }
+      return line;
+    });
+
+    const shareText = `${list.title}\n\n${taskLines.join('\n')}`;
+
+    try {
+      await Share.share({ message: shareText });
+    } catch (err) {
+      // user cancelled or an error occurred; optionally show alert
+      console.debug('Share cancelled/failed', err);
+    } finally {
+      // close modal after share attempt
+      setSelectedListId(null);
+    }
+  }
+
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={styles.row}
@@ -76,7 +118,7 @@ export default function TaskListsScreen({ navigation }) {
         <Text style={styles.rowTitle}>{item.title}</Text>
         <Text style={styles.rowSubtitle}>{item.tasksCount} tasks</Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color="#666" />
+      <Ionicons name="chevron-forward" size={18} color={theme.text} />
     </TouchableOpacity>
   );
 
@@ -84,17 +126,17 @@ export default function TaskListsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={theme.name === 'dark' ? 'light-content' : 'dark-content'} />
       <TopBar
         title="Task Lists"
-        leftIcon={<Ionicons name="chevron-back" size={26} />}
+        leftIcon={<Ionicons name="chevron-back" size={26} color={theme.text} />}
         onLeftIconPress={() => (navigation?.goBack ? navigation.goBack() : null)}
-        rightIcon1={<Ionicons name="search" size={24} />}
+        rightIcon1={<Ionicons name="search" size={24} color={theme.text} />}
         onRightIcon1Press={() => {
           // hook up search UI
           console.log('search pressed');
         }}
-        rightIcon2={<Ionicons name="filter" size={24} />}
+        rightIcon2={<Ionicons name="filter" size={24} color={theme.text}/>}
         onRightIcon2Press={() => {
           // hook up filter UI
           console.log('filter pressed');
@@ -124,7 +166,7 @@ export default function TaskListsScreen({ navigation }) {
           onPress={handleAddPress}
           accessibilityLabel="Add task list"
         >
-          <Ionicons name="add" size={28} color="#fff" />
+          <Ionicons name="add" size={28} color={theme.text} />
         </TouchableOpacity>
 
         {/* Add modal */}
@@ -204,47 +246,10 @@ export default function TaskListsScreen({ navigation }) {
                 <TouchableOpacity
                   style={styles.actionButton}
                   // inside your Modal action sheet — replace the Share TouchableOpacity onPress
-                  onPress={async () => {
-                    const list = taskLists.find(l => l.id === selectedListId);
-                    if (!list) return;
-
-                    const listTasks = tasks.filter(t => t.tasklistId === list.id);
-                    if (listTasks.length === 0) {
-                      Alert.alert('Empty list', 'There are no tasks to share.');
-                      return;
-                    }
-
-                    const taskLines = listTasks.map(task => {
-                      let line = `• ${task.title}`;
-                      if (task.description) line += ` - ${task.description}`;
-                      if (task.dueDate) {
-                        const dueDate = new Date(task.dueDate);
-                        const formattedDate = dueDate.toLocaleDateString(undefined, {
-                          weekday: 'long',
-                          month: 'long',
-                          day: 'numeric',
-                          year: dueDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-                        });
-                        line += ` (Due: ${formattedDate})`;
-                      }
-                      return line;
-                    });
-
-                    const shareText = `${list.title}\n\n${taskLines.join('\n')}`;
-
-                    try {
-                      await Share.share({ message: shareText });
-                    } catch (err) {
-                      // user cancelled or an error occurred; optionally show alert
-                      console.debug('Share cancelled/failed', err);
-                    } finally {
-                      // close modal after share attempt
-                      setSelectedListId(null);
-                    }
-                  }}
+                  onPress={shareTaskList}
 
                 >
-                  <Ionicons name="share-outline" size={22} />
+                  <Ionicons name="share-outline" size={22} color={theme.text} />
                   <Text style={styles.actionText}>Share</Text>
                 </TouchableOpacity>
 
@@ -285,114 +290,120 @@ export default function TaskListsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: theme.background },
 
-  container: { flex: 1 },
+    container: { flex: 1 },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    backgroundColor: '#fff',
-  },
-  rowContent: { flex: 1 },
-  rowTitle: { fontSize: 16, fontWeight: '600' },
-  rowSubtitle: { marginTop: 4, color: '#666' },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: '#eee', marginLeft: 16 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      backgroundColor: theme.surface,
+    },
+    rowContent: { flex: 1 },
+    rowTitle: { fontSize: 16, fontWeight: '600', color: theme.text },
+    rowSubtitle: { marginTop: 4, color: theme.muted },
+    separator: { height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginLeft: 16 },
 
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyState: { alignItems: 'center' },
-  emptyTitle: { fontSize: 20, fontWeight: '600', marginBottom: 6 },
-  emptySubtitle: { color: '#666' },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    emptyState: { alignItems: 'center' },
+    emptyTitle: { fontSize: 20, fontWeight: '600', marginBottom: 6, color: theme.text },
+    emptySubtitle: { color: theme.muted },
 
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 28,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#0b6efd',
-    justifyContent: 'center',
-    alignItems: 'center',
-    // shadow
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 6 }, shadowRadius: 8 },
-      android: { elevation: 6 },
-    }),
-  },
+    fab: {
+      position: 'absolute',
+      right: 20,
+      bottom: 28,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: theme.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      // shadow
+      ...Platform.select({
+        ios: { shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 6 }, shadowRadius: 8 },
+        android: { elevation: 6 },
+      }),
+    },
 
-  /* modal */
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end' },
-  modalButton: { paddingVertical: 8, paddingHorizontal: 12 },
-  modalPrimary: { backgroundColor: '#0b6efd', borderRadius: 8, marginLeft: 8 },
-  modalButtonText: { color: '#333', fontWeight: '600' },
-  modalPrimaryText: { color: '#fff' },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: 20,
-  },
+    /* modal */
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: theme.overlay,
+      justifyContent: 'center',
+      padding: 20,
+    },
+    modalCard: {
+      backgroundColor: theme.surface,
+      borderRadius: 12,
+      padding: 16,
+    },
+    modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12, color: theme.text },
+    input: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.border,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 12,
+      backgroundColor: theme.surface,
+      color: theme.text,
+    },
+    modalActions: { flexDirection: 'row', justifyContent: 'flex-end' },
+    modalButton: { paddingVertical: 8, paddingHorizontal: 12 },
+    modalPrimary: { backgroundColor: theme.primary, borderRadius: 8, marginLeft: 8 },
+    modalButtonText: { color: theme.text, fontWeight: '600' },
+    modalPrimaryText: { color: '#fff' },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: theme.overlay,
+      justifyContent: 'center',
+      padding: 20,
+    },
 
-  actionSheet: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-  },
+    actionSheet: {
+      backgroundColor: theme.surface,
+      borderRadius: 12,
+      padding: 16,
+    },
 
-  renameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
+    renameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
 
-  renameInput: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
+    renameInput: {
+      flex: 1,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.border,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      backgroundColor: theme.surface,
+      color: theme.text,
+    },
 
-  renameSave: {
-    marginLeft: 12,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
+    renameSave: {
+      marginLeft: 12,
+      color: theme.primary,
+      fontWeight: '600',
+    },
 
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
+    actionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+    },
 
-  actionText: {
-    marginLeft: 12,
-    fontSize: 16,
-  },
+    actionText: {
+      marginLeft: 12,
+      fontSize: 16,
+      color: theme.text,
+    },
 
-});
+  });

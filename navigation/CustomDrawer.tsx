@@ -27,6 +27,8 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
   const mockName = "Firstname Lastname";
   const mockEmail = "firstname.lastname@example.com";
 
+  const styles = makeStyles(theme);
+
   const menuItems: { key: string; label: string; icon: React.ReactNode; onPress: () => void }[] =
     [
       {
@@ -51,8 +53,6 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
         onPress: () => Alert.alert("Not implemented", "Settings screen not implemented yet"),
       },
     ];
-
-  const styles = makeStyles(theme);
 
   return (
     <SafeAreaView style={styles.root}>

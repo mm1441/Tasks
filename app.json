@@ -7,10 +7,13 @@
     "icon": "assets/vecteezy_checklist.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "scheme": "com.magicmarinac.tasks",
     "ios": {
+      "bundleIdentifier": "com.magicmarinac.tasks",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.magicmarinac.tasks",
       "adaptiveIcon": {
         "foregroundImage": "assets/vecteezy_checklist.png",
         "backgroundColor": "#ffffff"
@@ -23,18 +26,45 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       [
-        "expo-splash-screen",
+        "android-glance-widget-expo",
         {
-          "backgroundColor": "#000000",
-          "image": "assets/vecteezy_checklist.png",
-          "resizeMode": "contain",
-          "dark": {
-            "image": "assets/vecteezy_checklist.png",
-            "backgroundColor": "#000000"
-          }
+          "glanceVersion": "1.1.1",
+          "kotlinVersion": "2.0.0",    // Or your preferred Kotlin version
+          "widgets": [
+            {
+              "widgetClassName": "Home",   // Your widget's Kotlin class name
+              "configurationActivity": "HomeWidgetConfigurationActivity", // Optional: if you want a config screen
+              "widgetProviderInfo": {
+                "description": "Task list widget",
+                "updatePeriodMillis": 1800000, // 30 minutes (minimum for battery reasons)
+                "minWidth": "250dp",
+                "minHeight": "110dp",
+                "targetCellWidth": "3",
+                "targetCellHeight": "2",
+                "maxResizeWidth": "400dp",
+                "maxResizeHeight": "300dp",
+                "resizeMode": "horizontal|vertical",
+                "widgetCategory": "home_screen"
+              }
+            }
+          ]
         }
       ],
-      "expo-font"
-    ]
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "splash": {
+      "image": "assets/vecteezy_checklist.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "extra": {
+      "EXPO_PUBLIC_ANDROID_CLIENT_ID": "73415059897-3ijunc0ke1pc3lccccocdhj9gl2kv07t.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "73415059897-bkf2pg91g2k6m8qdluh7bqnicjh34jkp.apps.googleusercontent.com",
+      "eas": {
+        "projectId": "e5d392f8-451d-40ba-b9de-6ac26f027771"
+      }
+    }
+
   }
 }
