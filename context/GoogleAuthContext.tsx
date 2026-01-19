@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { GoogleAuthService, GoogleAuthTokens } from '../services/googleAuth';
+import { GoogleAuthService, GoogleAuthTokens } from '../services/GoogleAuth';
 
 interface GoogleAuthContextType {
   isAuthenticated: boolean;

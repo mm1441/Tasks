@@ -1,3 +1,4 @@
+// HomeScreen.tsx
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
@@ -5,13 +6,20 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Modal,
   Pressable,
   FlatList,
   Dimensions,
   Share,
   TextInput,
   BackHandler,
+  ScrollView,
+  TouchableWithoutFeedback,
+  Keyboard,
+  Platform,
+  Animated,
+  Modal,
+  ActivityIndicator,
+  ToastAndroid,
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { useTasks } from "../context/TaskContext";
@@ -27,17 +35,17 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import HorizontalScrollWithUnderline from "../components/HorizontalScrollWithUnderline";
 import DueDateSectionList from "../components/DueDateSectionList";
-import * as Google from 'expo-auth-session/providers/google';
-import { GoogleAuthService } from "../services/googleAuth";
-import * as WebBrowser from 'expo-web-browser';
+import CompletedTasksFooter from "../components/CompletedTasksFooter";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
+
+// WebBrowser.maybeCompleteAuthSession();
 
 type HomeScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, "Home">;
 };
+
 type SortOption = 'custom' | 'dueDateAsc' | 'dueDateDesc' | 'createdAtAsc' | 'createdAtDesc' | null;
-const { width } = Dimensions.get('window');
-const { height } = Dimensions.get('window');
-WebBrowser.maybeCompleteAuthSession();
+const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const {
@@ -50,7 +58,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     addTaskList,
     currentTaskList,
     currentTaskListId,
-    syncWithGoogle,
+    downloadFromGoogle,
+    uploadToGoogle,
     syncStatus,
     syncError,
   } = useTasks();
@@ -60,47 +69,64 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const styles = makeStyles(theme);
 
   const [sortOption, setSortOption] = useState<SortOption>('custom');
-  const [showCompleted, setShowCompleted] = useState<boolean>(true);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const isSelectionMode = selectedTaskIds.length > 0;
   const clearSelection = useCallback(() => setSelectedTaskIds([]), []);
   const insets = useSafeAreaInsets();
 
-  const [multiModalVisible, setMultiModalVisible] = useState(false);
-  const [multiTitle, setMultiTitle] = useState('');
-  const [multiAdded, setMultiAdded] = useState<string[]>([]);
-  const multiInputRef = useRef<TextInput | null>(null);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [newDueDate, setNewDueDate] = useState<string>('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // const authService = GoogleAuthService.getInstance();
+  const [isAdding, setIsAdding] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const translateY = useRef(new Animated.Value(0)).current;
+  const titleInputRef = useRef<TextInput | null>(null);
 
-  // useEffect(() => {
-  //   if (response?.type === 'success') {
-  //     const { authentication } = response;
-  //     if (authentication) {
-  //       // Send the result to your service
-  //       authService.setTokensFromAuthResult(authentication)
-  //         .then(() => {
-  //           console.log('Login successful, tokens saved!');
-  //           // Navigate to home or whatever
-  //         })
-  //         .catch(err => console.error('Failed to save tokens:', err));
-  //     }
-  //   } else if (response?.type === 'error') {
-  //     console.error('Auth error:', response.error);
-  //   }
-  // }, [response]);
+  // Sync modal state
+  const [syncModalVisible, setSyncModalVisible] = useState(false);
+  const [syncModalMessages, setSyncModalMessages] = useState<string[]>([]);
+  const [syncModalError, setSyncModalError] = useState<string | null>(null);
+  const [syncModalBusy, setSyncModalBusy] = useState(false);
+  const lastSyncActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Inline status (toast fallback)
+  const [inlineStatus, setInlineStatus] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  useEffect(() => {
+    if (!inlineStatus) return;
+    const t = setTimeout(() => setInlineStatus(null), 4000);
+    return () => clearTimeout(t);
+  }, [inlineStatus]);
 
   useEffect(() => {
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (isSelectionMode) {
-        clearSelection();
-        return true;
-      }
-      return false;
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showListener = Keyboard.addListener(showEvent, (e) => {
+      const height = (e as any).endCoordinates?.height || 0;
+      setKeyboardHeight(height);
+      Animated.timing(translateY, {
+        toValue: -height,
+        duration: (e as any).duration || 300,
+        useNativeDriver: true,
+      }).start();
     });
 
-    return () => sub.remove();
-  }, [isSelectionMode, clearSelection]);
+    const hideListener = Keyboard.addListener(hideEvent, (e) => {
+      setKeyboardHeight(0);
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: (e as any).duration || 300,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (taskLists.length > 0 && !currentTaskList) {
@@ -110,9 +136,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const displayedTasks = useMemo(() => {
     if (!currentTaskListId) return [];
-    let listTasks = tasks.filter(t => t.tasklistId === currentTaskListId);
-    if (!showCompleted) 
-      listTasks = listTasks.filter(t => !t.isCompleted);
+    // Only show non-completed tasks in the main list.
+    let listTasks = tasks.filter(t => t.tasklistId === currentTaskListId && !t.isCompleted && !t.isDeleted);
+
     switch (sortOption) {
       case 'dueDateAsc':
         listTasks = listTasks.slice().sort((a, b) => {
@@ -142,7 +168,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     }
 
     return listTasks;
-  }, [tasks, currentTaskListId, sortOption, showCompleted]);
+  }, [tasks, currentTaskListId, sortOption]);
+
+  const completedTasks = useMemo(() => {
+    if (!currentTaskListId) return [];
+    return tasks.filter(t => t.tasklistId === currentTaskListId && t.isCompleted);
+  }, [tasks, currentTaskListId]);
 
   const activeIndex = useMemo(() => {
     if (!currentTaskList) return 0;
@@ -168,113 +199,208 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     setSortOption(option);
   };
 
-  const handleSync = useCallback(async () => {
+  // Small helper: ensure network + get token (sign-in if necessary) and provide progress callback
+  const performWithToken = async (action: (token: string, progress?: (msg: string) => void) => Promise<void>, progressCb?: (msg: string) => void) => {
     if (!isOnline) {
-      Alert.alert('Offline', 'You need to be connected to the internet to sync.');
-      return;
-    }
-
-    if (!isAuthenticated) {
-      Alert.alert(
-        'Sign In Required',
-        'Please sign in with Google to sync your tasks.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Sign In',
-            onPress: async () => {
-              try {
-                // console.debug(request?.clientId)
-                // console.debug(`Redirect URI: ${request?.redirectUri}`)
-                //promptAsync(); // new
-                await signIn();
-                const token = await getAccessToken();
-                // After sign in, trigger sync
-                if (token) {
-                  console.debug('token', token);
-                  handleSyncWithToken(token);
-                }
-              } catch (error) {
-                Alert.alert('Sign In Failed', error instanceof Error ? error.message : 'Failed to sign in');
-              }
-            },
-          },
-        ]
-      );
+      setInlineStatus({ type: 'error', text: 'Offline — connect to internet to sync' });
       return;
     }
 
     try {
-      const token = await getAccessToken();
+      let token = await getAccessToken();
       if (!token) {
-        Alert.alert('Error', 'Failed to get access token. Please sign in again.');
+        // Prompt sign-in using a modal like experience rather than Alert
+        const doSignIn = await new Promise<boolean>((resolve) => {
+          // keep UX simple here: use native alert to confirm sign-in
+          Alert.alert(
+            'Sign In Required',
+            'Please sign in with Google to sync your tasks.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Sign In', onPress: () => resolve(true) },
+            ],
+            { cancelable: true }
+          );
+        });
+
+        if (!doSignIn) return;
+
+        try {
+          await signIn();
+        } catch (e) {
+          setInlineStatus({ type: 'error', text: 'Sign-in failed' });
+          return;
+        }
+
+        token = await getAccessToken();
+      }
+
+      if (!token) {
+        setInlineStatus({ type: 'error', text: 'Failed to obtain access token' });
         return;
       }
-      console.debug(token)
-      await handleSyncWithToken(token);
-    } catch (error) {
-      Alert.alert('Sync Failed', error instanceof Error ? error.message : 'Failed to sync tasks');
-    }
-  }, [isOnline, isAuthenticated, signIn, getAccessToken]);
 
-  const handleSyncWithToken = async (accessToken: string) => {
-    try {
-      await syncWithGoogle(accessToken, (message) => {
-        console.log('Sync progress:', message);
-      });
-      if (syncError) {
-        Alert.alert('Sync Error', syncError);
-      }
-    } catch (error) {
-      Alert.alert('Sync Failed', error instanceof Error ? error.message : 'Failed to sync tasks');
+      await action(token, progressCb);
+    } catch (err) {
+      console.error('performWithToken error', err);
+      setInlineStatus({ type: 'error', text: err instanceof Error ? err.message : String(err) });
     }
   };
 
-  const shareTaskList = async () => {
-    if (!currentTaskList || displayedTasks.length === 0) {
-      Alert.alert('No tasks', 'There are no tasks to share in this list.');
-      return;
+  // Sync actions that update the modal/progress UI
+  const startDownload = async () => {
+    setSyncModalMessages([]);
+    setSyncModalError(null);
+    setSyncModalVisible(true);
+    setSyncModalBusy(true);
+
+    lastSyncActionRef.current = async () => {
+      await performWithToken(async (token, progress) => {
+        const onProgress = (msg: string) => {
+          setSyncModalMessages(prev => [...prev, msg]);
+          progress?.(msg);
+        };
+
+        try {
+          await downloadFromGoogle(token, onProgress);
+          const successText = 'Download completed';
+          setInlineStatus({ type: 'success', text: successText });
+          if (Platform.OS === 'android') ToastAndroid.show(successText, ToastAndroid.SHORT);
+        } catch (e) {
+          const errText = e instanceof Error ? e.message : String(e);
+          setSyncModalError(errText);
+          setInlineStatus({ type: 'error', text: 'Download failed' });
+          if (Platform.OS === 'android') ToastAndroid.show('Download failed', ToastAndroid.SHORT);
+        }
+      });
+    };
+
+    try {
+      await lastSyncActionRef.current?.();
+    } finally {
+      setSyncModalBusy(false);
+      // keep modal open so user can inspect messages; they can close it manually
     }
+  };
 
-    let tasksToShare = displayedTasks;
-    const selectedTasks = displayedTasks.filter(t => selectedTaskIds.includes(t.id));
-    if (selectedTasks.length !== 0) {
-      tasksToShare = selectedTasks;
+  const startUpload = async () => {
+    setSyncModalMessages([]);
+    setSyncModalError(null);
+    setSyncModalVisible(true);
+    setSyncModalBusy(true);
+
+    lastSyncActionRef.current = async () => {
+      await performWithToken(async (token, progress) => {
+        const onProgress = (msg: string) => {
+          setSyncModalMessages(prev => [...prev, msg]);
+          progress?.(msg);
+        };
+
+        try {
+          await uploadToGoogle(token, onProgress);
+          const successText = 'Upload completed';
+          setInlineStatus({ type: 'success', text: successText });
+          if (Platform.OS === 'android') ToastAndroid.show(successText, ToastAndroid.SHORT);
+        } catch (e) {
+          const errText = e instanceof Error ? e.message : String(e);
+          setSyncModalError(errText);
+          setInlineStatus({ type: 'error', text: 'Upload failed' });
+          if (Platform.OS === 'android') ToastAndroid.show('Upload failed', ToastAndroid.SHORT);
+        }
+      });
+    };
+
+    try {
+      await lastSyncActionRef.current?.();
+    } finally {
+      setSyncModalBusy(false);
     }
+  };
 
-    const taskLines = tasksToShare.map(task => {
-      let line = task.title;
+  const startDownloadThenUpload = async () => {
+    setSyncModalMessages([]);
+    setSyncModalError(null);
+    setSyncModalVisible(true);
+    setSyncModalBusy(true);
 
-      if (task.description) {
-        line += ` - ${task.description}`;
+    lastSyncActionRef.current = async () => {
+      await performWithToken(async (token, progress) => {
+        const onProgress = (msg: string) => {
+          setSyncModalMessages(prev => [...prev, msg]);
+          progress?.(msg);
+        };
+
+        try {
+          await downloadFromGoogle(token, onProgress);
+          setSyncModalMessages(prev => [...prev, 'Download finished — starting upload...']);
+          await uploadToGoogle(token, onProgress);
+          const successText = 'Download and upload completed';
+          setInlineStatus({ type: 'success', text: successText });
+          if (Platform.OS === 'android') ToastAndroid.show(successText, ToastAndroid.SHORT);
+        } catch (e) {
+          const errText = e instanceof Error ? e.message : String(e);
+          setSyncModalError(errText);
+          setInlineStatus({ type: 'error', text: 'Sync failed' });
+          if (Platform.OS === 'android') ToastAndroid.show('Sync failed', ToastAndroid.SHORT);
+        }
+      });
+    };
+
+    try {
+      await lastSyncActionRef.current?.();
+    } finally {
+      setSyncModalBusy(false);
+    }
+  };
+
+  const handleSyncOptions = () => {
+    // show a modal rather than an Alert; use simple action sheet via Alert for now to choose
+    Alert.alert(
+      'Sync with Google',
+      'Choose an action for this task list:',
+      [
+        { text: 'Download from Google', onPress: startDownload },
+        { text: 'Upload to Google', onPress: startUpload },
+        { text: 'Download then Upload', onPress: startDownloadThenUpload },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const openAdd = () => {
+    setIsAdding(true);
+    setTimeout(() => titleInputRef.current?.focus(), 100); // Small delay for render
+  };
+
+  const closeAdd = (clear = true) => {
+    setIsAdding(false);
+    Keyboard.dismiss();
+    if (clear) {
+      setNewTitle('');
+      setNewDescription('');
+      setNewDueDate('');
+    }
+  };
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isSelectionMode) {
+        clearSelection();
+        return true;
       }
-
-      if (task.dueDate) {
-        const dueDate = new Date(task.dueDate);
-        const formattedDate = dueDate.toLocaleDateString(undefined, {
-          month: 'long',
-          day: 'numeric',
-          year: dueDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-        });
-        line += ` (Due: ${formattedDate})`;
+      if (isAdding) {
+        closeAdd();
+        return true;
       }
-
-      return line;
+      return false;
     });
 
-    const shareText = `${currentTaskList.title}\n\n${taskLines.join('\n')}`;
+    return () => sub.remove();
+  }, [isSelectionMode, clearSelection, isAdding]);
 
-    try {
-      await Share.share({
-        message: shareText,
-      });
-    } catch (error) {
-      Alert.alert('Sharing failed', 'Unable to share the task list.');
-    }
-  };
-
-  const addMultiTask = async () => {
-    const trimmed = multiTitle.trim();
+  const handleSaveNewTask = async () => {
+    const trimmed = newTitle.trim();
     if (!trimmed) return;
 
     if (!currentTaskListId) {
@@ -285,16 +411,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     try {
       await addTask({
         title: trimmed,
+        description: newDescription.trim() || undefined,
+        dueDate: newDueDate.trim() || undefined,
         tasklistId: currentTaskListId,
-        description: undefined,
       });
-      // record what we just added in the session
-      setMultiAdded(prev => [trimmed, ...prev]);
-      setMultiTitle('');
-      // keep focus in the input for quick multi-add
-      setTimeout(() => multiInputRef.current?.focus(), 50);
+
+      closeAdd(true);
     } catch (err) {
-      console.error('Failed adding task', err);
+      console.error('Failed adding new task', err);
       Alert.alert('Error', 'Failed to add task.');
     }
   };
@@ -334,215 +458,437 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     { label: 'Custom sort', onPress: () => selectSort('custom') },
     { label: 'Sort by due date ↑', onPress: () => selectSort('dueDateAsc') },
     { label: 'Sort by creation ↓', onPress: () => selectSort('createdAtDesc') },
-    {
-      label: showCompleted ? 'Hide completed tasks' : 'Show completed tasks',
-      onPress: () => setShowCompleted(prev => !prev),
-    },
   ];
+
+  const shareTaskList = async () => {
+    if (!currentTaskList || displayedTasks.length === 0) {
+      Alert.alert('No tasks', 'There are no tasks to share in this list.');
+      return;
+    }
+
+    let tasksToShare = displayedTasks;
+    const selectedTasks = displayedTasks.filter(t => selectedTaskIds.includes(t.id));
+    if (selectedTasks.length !== 0) {
+      tasksToShare = selectedTasks;
+    }
+
+    const taskLines = tasksToShare.map(task => {
+      let line = task.title;
+
+      if (task.description) {
+        line += ` - ${task.description}`;
+      }
+
+      if (task.dueDate) {
+        const dueDate = new Date(task.dueDate);
+        const formattedDate = dueDate.toLocaleDateString(undefined, {
+          month: 'long',
+          day: 'numeric',
+          year: dueDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
+        });
+        line += ` (Due: ${formattedDate})`;
+      }
+
+      return line;
+    });
+
+    const shareText = `${currentTaskList.title} ${taskLines.join('')}`;
+
+    try {
+      await Share.share({ message: shareText });
+    } catch (error) {
+      Alert.alert('Sharing failed', 'Unable to share the task list.');
+    }
+  };
+
+  // Derived object for convenience
+  const currentTaskListLocal = useMemo(() => currentTaskList, [currentTaskList]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={{ position: 'relative', zIndex: 10 }}>
-        {isSelectionMode ? (
-          <View style={styles.contextBar}>
-            <TouchableOpacity
-              onPress={clearSelection}
-              style={styles.contextIcon}
-              accessibilityLabel="Cancel selection"
-            >
-              <Ionicons name="close" size={24} color={theme.text} />
-            </TouchableOpacity>
+      {/* Inline status banner */}
+      {inlineStatus && (
+        <View style={[styles.inlineBanner, inlineStatus.type === 'error' ? styles.bannerError : styles.bannerSuccess]}>
+          <Text style={styles.bannerText}>{inlineStatus.text}</Text>
+        </View>
+      )}
 
-            <Text style={[styles.contextText, { fontSize: 16, fontWeight: '600', marginLeft: 8 }]}>
-              {selectedTaskIds.length} selected
-            </Text>
-
-            <View style={styles.contextActions}>
+      {/* Dim content and prevent interaction when modal busy */}
+      <View style={{ flex: 1, opacity: syncModalBusy ? 0.5 : 1 }} pointerEvents={syncModalBusy ? 'none' : 'auto'}>
+        <View style={{ position: 'relative', zIndex: 10 }}>
+          {isSelectionMode ? (
+            // ToDo: Extract context bar as component
+            <View style={styles.contextBar}>
               <TouchableOpacity
-                style={styles.contextButton}
-                onPress= {() => { shareTaskList(); }} // ToDo: Share only selected tasks
+                onPress={clearSelection}
+                style={styles.contextIcon}
+                accessibilityLabel="Cancel selection"
               >
-                <Ionicons name="share-outline" size={22} color={theme.text} />
-                <Text style={styles.contextText}>Share</Text>
+                <Ionicons name="close" size={24} color={theme.text} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.contextButton}
-                onPress={() => {
-                  Alert.alert(
-                    'Delete tasks',
-                    `Delete ${selectedTaskIds.length} task(s)?`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
-                          selectedTaskIds.forEach(id => deleteTask(id));
-                          clearSelection();
+              <Text style={[styles.contextText, { fontSize: 16, fontWeight: '600', marginLeft: 8 }]}>
+                {selectedTaskIds.length} selected
+              </Text>
+
+              <View style={styles.contextActions}>
+                <TouchableOpacity
+                  style={styles.contextButton}
+                  onPress={() => { shareTaskList(); }}
+                >
+                  <Ionicons name="share-outline" size={22} color={theme.text} />
+                  <Text style={styles.contextText}>Share</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.contextButton}
+                  onPress={() => {
+                    Alert.alert(
+                      'Delete tasks',
+                      `Delete ${selectedTaskIds.length} task(s)?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: () => {
+                            selectedTaskIds.forEach(id => deleteTask(id));
+                            clearSelection();
+                          }
                         }
-                      }
-                    ]
-                  );
-                }}
-              >
-                <Ionicons name="trash-outline" size={22} color="#FF3B30" />
-                <Text style={[styles.contextText, { color: '#FF3B30' }]}>Delete</Text>
-              </TouchableOpacity>
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+                  <Text style={[styles.contextText, { color: '#FF3B30' }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+          ) : (
+            <TopBar
+              leftIcon={require('../assets/default-profile.png')}
+              onLeftIconPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+              rightIcon1={
+                <Ionicons
+                  name={syncStatus === 'syncing' ? 'sync' : 'sync-outline'}
+                  size={20}
+                  color={
+                    !isOnline
+                      ? theme.muted
+                      : syncStatus === 'syncing'
+                        ? theme.primary
+                        : syncStatus === 'error'
+                          ? '#FF3B30'
+                          : theme.text
+                  }
+                />
+              }
+              onRightIcon1Press={handleSyncOptions}
+              rightIcon2={<Ionicons name="filter" size={20} color={theme.text} />}
+              rightIcon3={<Ionicons name="ellipsis-vertical-outline" size={20} color={theme.text} />}
+              filterMenuItems={filterMenuItems}
+              otherMenuItems={[
+                { label: 'Manage task lists', onPress: () => { navigation.navigate('TaskList'); } },
+                { label: 'Share task list', onPress: () => { shareTaskList(); } }
+              ]}
+            />
+          )}
+        </View>
+
+        <HorizontalScrollWithUnderline
+          taskLists={taskLists}
+          selectedIndex={activeIndex}
+          onActiveChange={(index) => {
+            if (index < 0 || index >= taskLists.length) return;
+            setCurrentTaskList(taskLists[index].id);
+          }}
+        />
+
+        {displayedTasks.length === 0 && completedTasks.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No tasks yet</Text>
+            <Text style={styles.emptySubtext}>Tap + to add your first task</Text>
           </View>
-        ) : (
-          <TopBar
-            title={'My Tasks'}
-            leftIcon={require('../assets/default-profile.png')}
-            onLeftIconPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-            rightIcon1={
-              <Ionicons 
-                name={syncStatus === 'syncing' ? 'sync' : 'sync-outline'} 
-                size={20} 
-                color={
-                  !isOnline 
-                    ? theme.muted 
-                    : syncStatus === 'syncing' 
-                    ? theme.primary 
-                    : syncStatus === 'error' 
-                    ? '#FF3B30' 
-                    : theme.text
-                }
+        ) : sortOption === 'custom' ? (
+          <View style={{ flex: 1 }}>
+            <DragList
+              data={displayedTasks}
+              keyExtractor={(it) => it.id}
+              renderItem={renderDragListItem}
+              onReordered={onReordered}
+              contentContainerStyle={[styles.listContent, { paddingBottom: 24 }]}
+              ListFooterComponent={
+                <CompletedTasksFooter
+                  tasks={completedTasks}
+                  isSelectionMode={isSelectionMode}
+                  selectedTaskIds={selectedTaskIds}
+                  onPressTask={(id) => {
+                    if (isSelectionMode) toggleSelectTask(id);
+                    else navigation.navigate('EditTask', { taskId: id });
+                  }}
+                  onLongPressTask={toggleSelectTask}
+                />
+              }
+            />
+          </View>
+        ) : sortOption === 'dueDateAsc' ? (
+          <DueDateSectionList
+            tasks={displayedTasks}
+            selectedIds={selectedTaskIds}
+            onPress={(id: string) => {
+              if (isSelectionMode) toggleSelectTask(id);
+              else navigation.navigate('EditTask', { taskId: id });
+            }}
+            onLongPress={(id: string) => toggleSelectTask(id)}
+            ListFooterComponent={
+              <CompletedTasksFooter
+                tasks={completedTasks}
+                isSelectionMode={isSelectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onPressTask={(id) => {
+                  if (isSelectionMode) toggleSelectTask(id);
+                  else navigation.navigate('EditTask', { taskId: id });
+                }}
+                onLongPressTask={toggleSelectTask}
               />
             }
-            onRightIcon1Press={handleSync}
-            rightIcon2={<Ionicons name="filter" size={20} color={theme.text}/>}
-            rightIcon3={<Ionicons name="ellipsis-vertical-outline" size={20} color={theme.text}/>}
-            filterMenuItems={filterMenuItems}
-            otherMenuItems={[
-              // { label: 'Clear completed tasks', onPress: () => { /* implement if you want hard delete */ } },
-              // { label: 'View completed tasks', onPress: () => { /* optional */ } },
-              { label: 'Add multiple tasks', onPress: () => setMultiModalVisible(true) },
-              { label: 'Manage task lists', onPress: () => { navigation.navigate('TaskList'); } },
-              { label: 'Share task list', onPress: () => { shareTaskList(); }}
-            ]}
+            contentContainerStyle={{ paddingBottom: 24 }}
+          />
+        ) : (
+          <FlatList
+            data={displayedTasks}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={[styles.listContent, { paddingBottom: 24 }]}
+            renderItem={({ item }) => (
+              <TaskCard
+                item={item}
+                showDragHandle={false}
+                onPress={() => {
+                  if (isSelectionMode)
+                    toggleSelectTask(item.id);
+                  else
+                    navigation.navigate('EditTask', { taskId: item.id });
+                }}
+                onLongPress={() => toggleSelectTask(item.id)}
+                selected={selectedTaskIds.includes(item.id)}
+                selectionMode={isSelectionMode}
+              />
+            )}
+            ListFooterComponent={
+              <CompletedTasksFooter
+                tasks={completedTasks}
+                isSelectionMode={isSelectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onPressTask={(id) => {
+                  if (isSelectionMode) toggleSelectTask(id);
+                  else navigation.navigate('EditTask', { taskId: id });
+                }}
+                onLongPressTask={toggleSelectTask}
+              />
+            }
           />
         )}
+
+        {/* Floating Add Button opens the CustomBottomDrawer */}
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={openAdd}
+          accessibilityLabel="Add task"
+        >
+          <Text style={styles.addButtonText}>+</Text>
+        </TouchableOpacity>
+
+        {isAdding && (
+          <>
+            {/* Backdrop for outside tap to close */}
+            <TouchableWithoutFeedback onPress={() => closeAdd()}>
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: theme.overlay, zIndex: 10 },
+                ]}
+              />
+            </TouchableWithoutFeedback>
+
+            {/* Input panel */}
+            <Animated.View
+              style={[
+                {
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  zIndex: 11,
+                  backgroundColor: '#F5F4F5', // or theme.surface
+                  borderTopLeftRadius: 25,
+                  borderTopRightRadius: 25,
+                  overflow: 'hidden',
+                  transform: [{ translateY }],
+                },
+              ]}
+            >
+              <View
+                style={{
+                  paddingHorizontal: 16,
+                  paddingTop: 8,
+                  paddingBottom: insets.bottom + 16,
+                }}
+              >
+                {/* Header */}
+                <View style={styles.bottomHeader}>
+                  <Text style={styles.modalTitle}>New Task</Text>
+                </View>
+
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{ paddingBottom: 16 }} // Extra if needed
+                >
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={styles.label}>Title *</Text>
+                    <TextInput
+                      ref={titleInputRef}
+                      style={styles.input}
+                      value={newTitle}
+                      onChangeText={setNewTitle}
+                      placeholder="Enter task title"
+                      placeholderTextColor={theme.muted}
+                      returnKeyType="done"
+                      onSubmitEditing={handleSaveNewTask}
+                    />
+                  </View>
+
+                  <View style={{ marginTop: 12 }}>
+                      <Text style={styles.label}>Description</Text>
+                      <TextInput
+                        style={[styles.input, styles.textArea]}
+                        value={newDescription}
+                        onChangeText={setNewDescription}
+                        placeholder="Enter description (optional)"
+                        placeholderTextColor={theme.muted}
+                        multiline
+                        numberOfLines={4}
+                        textAlignVertical="top"
+                      />
+                    </View>
+
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={styles.label}>Due Date & Time</Text>
+                    <TouchableOpacity onPress={() => setShowDatePicker(true)}>
+                      <View pointerEvents="none">
+                        <TextInput
+                          style={styles.input}
+                          value={newDueDate ? newDueDate.replace('T', ' ') : ''}
+                          placeholder="Tap to select date & time (optional)"
+                          placeholderTextColor={theme.muted}
+                          editable={false}
+                        />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 }}>
+                    <Pressable style={styles.modalButton} onPress={() => closeAdd()}>
+                      <Text style={styles.modalButtonText}>Cancel</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[styles.modalButton, styles.modalPrimary, { marginLeft: 8 }]}
+                      onPress={handleSaveNewTask}
+                      disabled={!newTitle.trim()}
+                    >
+                      <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Save</Text>
+                    </Pressable>
+                  </View>
+                </ScrollView>
+              </View>
+            </Animated.View>
+          </>
+        )}
+
+        {/* DateTime picker */}
+        <DateTimePickerModal
+          isVisible={showDatePicker}
+          mode="datetime"
+          onConfirm={(selectedDate: Date) => {
+            setShowDatePicker(false);
+            const year = selectedDate.getFullYear();
+            const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(selectedDate.getDate()).padStart(2, '0');
+            const hours = String(selectedDate.getHours()).padStart(2, '0');
+            const minutes = String(selectedDate.getMinutes()).padStart(2, '0');
+            setNewDueDate(`${year}-${month}-${day}T${hours}:${minutes}`);
+          }}
+          onCancel={() => setShowDatePicker(false)}
+          date={newDueDate ? new Date(newDueDate) : new Date()}
+        />
+
       </View>
 
-      <HorizontalScrollWithUnderline
-        taskLists={taskLists}
-        selectedIndex={activeIndex}
-        onActiveChange={(index) => {
-          if (index < 0 || index >= taskLists.length) return;
-          setCurrentTaskList(taskLists[index].id);
-        }}
-      />
-
-      {/* Add multiple tasks modal */}
+      {/* Full-screen Sync Modal */}
       <Modal
+        visible={syncModalVisible}
         animationType="slide"
-        transparent
-        visible={multiModalVisible}
-        onRequestClose={() => setMultiModalVisible(false)}
+        transparent={true}
+        onRequestClose={() => {
+          if (!syncModalBusy) setSyncModalVisible(false);
+        }}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Add multiple tasks</Text>
+            <Text style={[styles.modalTitle, { marginBottom: 8 }]}>Sync with Google</Text>
 
-            <TextInput
-              ref={(r) => { multiInputRef.current = r; }}
-              placeholder="Task title"
-              value={multiTitle}
-              onChangeText={setMultiTitle}
-              style={styles.input}
-              autoFocus
-              onSubmitEditing={addMultiTask}
-              returnKeyType="done"
-            />
+            <View style={{ minHeight: 120, maxHeight: 360 }}>
+              {syncModalMessages.length === 0 ? (
+                <Text style={{ color: theme.muted }}>Waiting for progress...</Text>
+              ) : (
+                syncModalMessages.map((m, idx) => (
+                  <Text key={idx} style={{ marginVertical: 4 }}>{m}</Text>
+                ))
+              )}
+            </View>
 
-            {multiAdded.length !== 0 &&
-              <View style={{ marginBottom: 12 }}>
-                <Text style={{ fontSize: 13, color: theme.muted }}>
-                  Added: {multiAdded.length}
-                </Text>
-                {multiAdded.length > 0 && (
-                  <Text style={{ marginTop: 6, color: theme.text }}>
-                    {multiAdded.slice(0, 5).join(', ')}{multiAdded.length > 5 ? ` +${multiAdded.length - 5}` : ''}
-                  </Text>
-                )}
+            {syncModalError && (
+              <View style={{ marginTop: 8 }}>
+                <Text style={{ color: '#FF3B30', marginBottom: 8 }}>Error: {syncModalError}</Text>
               </View>
-            }
+            )}
 
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalButton} onPress={() => { setMultiModalVisible(false); setMultiTitle(''); setMultiAdded([]); }}>
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </Pressable>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
+              {!syncModalBusy && (
+                <Pressable style={styles.modalButton} onPress={() => setSyncModalVisible(false)}>
+                  <Text style={styles.modalButtonText}>Close</Text>
+                </Pressable>
+              )}
 
-              <Pressable style={[styles.modalButton, styles.modalPrimary]} onPress={addMultiTask}>
-                <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Add</Text>
-              </Pressable>
+              {syncModalBusy && (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <ActivityIndicator size="small" />
+                  <Text style={{ marginLeft: 8 }}>Working…</Text>
+                </View>
+              )}
 
-              <Pressable style={[styles.modalButton, styles.modalPrimary, { marginLeft: 8 }]} onPress={() => { setMultiModalVisible(false); setMultiTitle(''); setMultiAdded([]); }}>
-                <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Done</Text>
-              </Pressable>
+              {!syncModalBusy && syncModalError && (
+                <Pressable
+                  style={[styles.modalButton, styles.modalPrimary]}
+                  onPress={() => {
+                    // retry
+                    if (lastSyncActionRef.current) {
+                      setSyncModalMessages([]);
+                      setSyncModalError(null);
+                      setSyncModalBusy(true);
+                      lastSyncActionRef.current().finally(() => setSyncModalBusy(false));
+                    }
+                  }}
+                >
+                  <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Retry</Text>
+                </Pressable>
+              )}
             </View>
           </View>
         </View>
       </Modal>
 
-      {displayedTasks.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No tasks yet</Text>
-          <Text style={styles.emptySubtext}>Tap + to add your first task</Text>
-        </View>
-      ) : sortOption === 'custom' ? (
-        <View style={{ flex: 1 }}>
-          <DragList
-            data={displayedTasks}
-            keyExtractor={(it) => it.id}
-            renderItem={renderDragListItem}
-            onReordered={onReordered}
-            contentContainerStyle={styles.listContent}
-          />
-        </View>
-      ) : sortOption === 'dueDateAsc' ? (
-        <DueDateSectionList
-          tasks={displayedTasks}
-          selectedIds={selectedTaskIds}
-          onPress={(id: string) => {
-            if (isSelectionMode) toggleSelectTask(id);
-            else navigation.navigate('EditTask', { taskId: id });
-          }}
-          onLongPress={(id: string) => toggleSelectTask(id)}
-        />
-      ) : (
-        <FlatList
-          data={displayedTasks}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <TaskCard
-              item={item}
-              showDragHandle={false}
-              onPress={() => {
-                if (isSelectionMode) 
-                  toggleSelectTask(item.id);
-                else 
-                  navigation.navigate('EditTask', { taskId: item.id });
-              }}
-              onLongPress={() => toggleSelectTask(item.id)}
-              selected={selectedTaskIds.includes(item.id)}
-              selectionMode={isSelectionMode}
-            />
-          )}
-        />
-      )}
-
-      {/* Floating Add Button */}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => navigation.navigate('AddTask', { taskListId: currentTaskList?.id })}
-        accessibilityLabel="Add task"
-      >
-        <Text style={styles.addButtonText}>+</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -678,8 +1024,8 @@ const makeStyles = (theme: any) =>
     },
     addButton: {
       position: 'absolute',
-      right: width * 0.1,
-      bottom: height * 0.1,
+      right: width * 0.15,
+      bottom: SCREEN_HEIGHT * 0.1,
       width: 56,
       height: 56,
       borderRadius: 28,
@@ -719,10 +1065,9 @@ const makeStyles = (theme: any) =>
       color: theme.text,
     },
 
-    /* modal */
     modalBackdrop: {
       flex: 1,
-      backgroundColor: theme.overlay,
+      backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'center',
       padding: 20,
     },
@@ -731,7 +1076,6 @@ const makeStyles = (theme: any) =>
       borderRadius: 12,
       padding: 16,
     },
-    modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12, color: theme.text },
     input: {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: theme.border,
@@ -753,4 +1097,49 @@ const makeStyles = (theme: any) =>
       justifyContent: 'center',
       padding: 20,
     },
+    handleBar: {
+      width: 40,
+      height: 5,
+      backgroundColor: '#D3D3D3',
+      borderRadius: 3,
+    },
+    bottomHeader: {
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingBottom: 6,
+      flex: 1,
+      alignContent: "center"
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginBottom: 12,
+      color: theme.text
+    },
+
+    label: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: theme.primary,
+      marginBottom: 8,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+
+    textArea: {
+      height: 80,
+      paddingTop: 12,
+    },
+
+    inlineBanner: {
+      width: '100%',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+    },
+    bannerText: { color: '#fff', fontWeight: '600' },
+    bannerSuccess: { backgroundColor: '#2ECC71' },
+    bannerError: { backgroundColor: '#FF3B30' },
+
   });

@@ -1,6 +1,9 @@
-import { GoogleTasksService, GoogleTask } from './googleTasks';
+import { GoogleTasksService, GoogleTask } from './GoogleTasks';
 import type { Task } from '../types/Task';
 import type { TaskList } from '../types/TaskList';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
+
 
 export interface SyncResult {
   success: boolean;
@@ -8,12 +11,18 @@ export interface SyncResult {
   tasksUpdated: number;
   tasksDeleted: number;
   error?: string;
-  // Extended fields for task updates
   updatedTasks?: Task[];
   addedTasks?: Task[];
   createdTasks?: Array<{ localId: string; googleId: string }>;
   deletedTasks?: string[];
   taskListGoogleId?: string;
+}
+export interface TaskListReconcileResult {
+  addedTaskLists?: TaskList[]; // cloud → local (create these locally)
+  createdTaskLists?: Array<{ localId: string; googleId: string }>; // local → cloud (persist googleId locally)
+  linkedTaskLists?: Array<{ localId: string; googleId: string }>; // local lists matched to cloud list by title
+  success: boolean;
+  error?: string;
 }
 
 export class SyncService {
@@ -23,247 +32,332 @@ export class SyncService {
     this.tasksService = new GoogleTasksService(accessToken);
   }
 
-  async syncTaskList(
+  async download(
     localTaskList: TaskList,
     localTasks: Task[],
     onProgress?: (message: string) => void
   ): Promise<SyncResult> {
-    try {
 
-      onProgress?.('Starting sync...');
-
-      // ToDo: Add task lists from cloud that are not present locally getTaskLists(), for each new taskList => getTasks(newTaskList)
-
-      // Step 1: Get or create Google task list
-      let googleTaskListId = localTaskList.googleId;
-      console.debug(`googleTaskListId: ${googleTaskListId ?? '(none)'}`);
-
-      if (!googleTaskListId) {
-        onProgress?.('Setting up Google task list...');
-        // Try to use @default list first (for first local list)
-        // If that fails, create a new one
-        try {
-          const defaultList = await this.tasksService.getTaskList('@default');
-          console.debug(`Found @default list: id=${defaultList.id}, title=${defaultList.title}`);
-          googleTaskListId = defaultList.id;
-        } catch {
-          // Default list doesn't exist or access denied, create a new one
-          const newList = await this.tasksService.createTaskList(localTaskList.title);
-          console.debug(`Created new task list: id=${newList.id}, title=${newList.title}`);
-          googleTaskListId = newList.id;
-        }
-      }
-
-      onProgress?.('Fetching tasks from Google...');
-      // Step 2: Fetch all tasks from Google
-      const googleTasks = await this.tasksService.getTasks(googleTaskListId);
-      console.debug(`Fetched ${googleTasks.length} tasks from Google for listId=${googleTaskListId}`);
-
-
-      onProgress?.('Resolving conflicts...');
-      // Step 3: Perform conflict resolution and sync
-      console.debug('Resolving conflicts');
-      const result = await this.performTwoWaySync(
-        localTasks.filter(t => t.tasklistId === localTaskList.id),
-        googleTasks,
-        googleTaskListId,
-        localTaskList.id,
-        onProgress
-      );
-
-      // Step 4: Update task list with Google ID if needed
-      if (localTaskList.googleId !== googleTaskListId) {
-        // This will be handled by the caller updating the task list
-        result.taskListGoogleId = googleTaskListId;
-      }
-
-      // Also need to check if this is the first list and should use @default
-      // For now, we'll use the logic: if no googleId, try @default first
-      if (!localTaskList.googleId) {
-        try {
-          const defaultList = await this.tasksService.getTaskList('@default');
-          console.debug(`No google id locally; @default exists: id=${defaultList.id}, title=${defaultList.title}`);
-          result.taskListGoogleId = defaultList.id;
-        } catch {
-          // @default doesn't exist or failed, use the created one
-          console.debug('@default does not exist or is inaccessible');
-        }
-      }
-
-      onProgress?.('Sync completed');
-
-      // Log a small, readable summary rather than full objects
-      const resultSummary = {
-        success: result.success,
-        tasksAdded: result.tasksAdded,
-        tasksUpdated: result.tasksUpdated,
-        tasksDeleted: result.tasksDeleted,
-        addedTaskTitles: result.addedTasks?.map(t => t.title) ?? [],
-        updatedTaskTitles: result.updatedTasks?.map(t => t.title) ?? [],
-        deletedTaskLocalIds: result.deletedTasks ?? [],
-        createdTasks: result.createdTasks ?? [],
-        taskListGoogleId: result.taskListGoogleId,
-      };
-
-      console.debug('Sync completed:', resultSummary);
-      return result;
-    } catch (error) {
-      console.error('Sync error:', error instanceof Error ? error.message : String(error));
-      return {
-        success: false,
-        tasksAdded: 0,
-        tasksUpdated: 0,
-        tasksDeleted: 0,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
-
-  private async performTwoWaySync(
-    localTasks: Task[],
-    googleTasks: GoogleTask[],
-    googleTaskListId: string,
-    localTaskListId: string,
-    onProgress?: (message: string) => void
-  ): Promise<SyncResult> {
     const result: SyncResult = {
       success: true,
       tasksAdded: 0,
       tasksUpdated: 0,
       tasksDeleted: 0,
-      updatedTasks: [],
       addedTasks: [],
-      createdTasks: [],
+      updatedTasks: [],
       deletedTasks: [],
     };
-    const localTasksByGoogleId = new Map<string, Task>();
-    const localTasksByLocalId = new Map<string, Task>();
 
-    localTasks.forEach(task => {
-      if (task.googleId) {
-        localTasksByGoogleId.set(task.googleId, task);
-      }
-      localTasksByLocalId.set(task.id, task);
-    });
-    const googleTasksById = new Map<string, GoogleTask>();
-    googleTasks.forEach(task => {
-      if (task.id) {
-        googleTasksById.set(task.id, task);
-      }
-    });
+    const googleTaskListId = await this.resolveGoogleTaskList(localTaskList);
+    result.taskListGoogleId = googleTaskListId;
 
-    console.debug(`Local tasks: total=${localTasks.length}, byLocalId=${localTasksByLocalId.size}, byGoogleId=${localTasksByGoogleId.size}`);
-    console.debug(`Google tasks: total=${googleTasks.length}, byId=${googleTasksById.size}`);
+    onProgress?.('Fetching tasks from Google...');
+    const googleTasks = await this.tasksService.getTasks(googleTaskListId);
 
-    // Step 1: Process tasks that exist in both places (conflict resolution)
+    const localByGoogleId = new Map(
+      localTasks.filter(t => t.googleId).map(t => [t.googleId!, t])
+    );
+    const googleById = new Map(googleTasks.filter(t => t.id).map(t => [t.id!, t]));
+
     for (const googleTask of googleTasks) {
-      if (!googleTask.id) {
-        console.debug(`Skipping google task with no id (title='${googleTask.title ?? ''}')`);
-        continue;
-      }
-      const localTask = localTasksByGoogleId.get(googleTask.id);
-      if (localTask) {
-        console.debug(`Conflict for task id=${googleTask.id}, title='${googleTask.title ?? localTask.title}'`);
-        // Task exists in both places - resolve conflict
-        const localModified = new Date(localTask.lastModified).getTime();
-        const googleUpdated = googleTask.updated ? new Date(googleTask.updated).getTime() : 0;
-
-        if (googleUpdated > localModified) {
-          // Cloud is newer - update local
-          console.debug(`Cloud is newer for '${googleTask.title}': cloudUpdated=${googleTask.updated}, localModified=${localTask.lastModified}`);
-          onProgress?.(`Updating local task: ${googleTask.title}`);
-          result.tasksUpdated++;
-          // The caller will update the local task - preserve local ID
-          result.updatedTasks!.push(
-            GoogleTasksService.googleTaskToLocalTask(googleTask, localTask.tasklistId || '', localTask.id)
-          );
-        } else if (localModified > googleUpdated) {
-          // Local is newer - update cloud
-          console.debug(`Local is newer for '${localTask.title}': localModified=${localTask.lastModified}, cloudUpdated=${googleTask.updated}`);
-          onProgress?.(`Updating cloud task: ${localTask.title}`);
-          try {
-            const patch = GoogleTasksService.localTaskToGoogleTaskPatch(localTask);
-            console.debug(
-              `Patching cloud task '${localTask.title}' with fields:`,
-              Object.keys(patch)
-            );
-            await this.tasksService.updateTask(googleTaskListId, googleTask.id, patch);
-            result.tasksUpdated++;
-          } catch (error) {
-            console.error(`Failed to update Google task ${googleTask.id}: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-        // If timestamps are equal, no update needed
-      }
-    }
-
-    // Step 2: Add tasks that only exist in Google to local
-    for (const googleTask of googleTasks) {
-      if (!googleTask.id) {
-        console.debug(`Skipping google task with no id during add step (title='${googleTask.title ?? ''}')`);
-        continue;
-      }
-      if (!localTasksByGoogleId.has(googleTask.id)) {
-        console.debug(`Adding task from cloud: id=${googleTask.id}, title='${googleTask.title ?? ''}'`);
-        onProgress?.(`Adding task from cloud: ${googleTask.title}`);
+      if (!googleTask.id) continue;
+      const localTask = localByGoogleId.get(googleTask.id);
+      if (!localTask) {
         result.tasksAdded++;
         result.addedTasks!.push(
-          GoogleTasksService.googleTaskToLocalTask(googleTask, localTaskListId)
+          GoogleTasksService.googleTaskToLocalTask(googleTask, localTaskList.id)
         );
+      } else {
+        const localModified = new Date(localTask.lastModified).getTime();
+        const googleUpdated = googleTask.updated ? new Date(googleTask.updated).getTime() : 0;
+        if (googleUpdated > localModified) {
+          result.tasksUpdated++;
+          result.updatedTasks!.push(
+            GoogleTasksService.googleTaskToLocalTask(googleTask, localTaskList.id, localTask.id)
+          );
+        }
       }
     }
 
-    // Step 3: Add tasks that only exist locally to Google
     for (const localTask of localTasks) {
-      if (!localTask.googleId && !localTask.isDeleted) {
-        onProgress?.(`Uploading local task: ${localTask.title}`);
-        console.debug(`Uploading local task: localId=${localTask.id}, title='${localTask.title}'`);
-        try {
-          const googleTask = GoogleTasksService.localTaskToGoogleTask(localTask);
-          console.debug(`Converted local -> google: title='${googleTask.title}', id='${googleTask.id ?? ''}'`);
-          const created = await this.tasksService.createTask(googleTaskListId, googleTask);
-          console.debug(`Created remote task: id=${created.id ?? '(none)'}, title='${created.title ?? localTask.title}'`);
-          result.tasksAdded++;
-          result.createdTasks!.push({
-            localId: localTask.id,
-            googleId: created.id || '',
-          });
-        } catch (error) {
-          console.error(`Failed to create Google task for localId=${localTask.id}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    }
-
-    // Step 4: Handle deletions (tasks marked as deleted locally)
-    for (const localTask of localTasks) {
-      if (localTask.isDeleted && localTask.googleId) {
-        onProgress?.(`Deleting task from cloud: ${localTask.title}`);
-        try {
-          console.debug(`Requesting delete for googleId=${localTask.googleId}, localId=${localTask.id}`);
-          await this.tasksService.deleteTask(googleTaskListId, localTask.googleId);
-          result.tasksDeleted++;
-        } catch (error) {
-          console.error(`Failed to delete Google task ${localTask.googleId}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    }
-
-    // Step 5: Handle tasks deleted on Google (exist locally but not in Google)
-    const localGoogleIds = new Set(
-      localTasks.filter(t => t.googleId).map(t => t.googleId!)
-    );
-    for (const googleTaskId of localGoogleIds) {
-      if (!googleTasksById.has(googleTaskId)) {
-        // Task was deleted on Google, mark as deleted locally
-        const localTask = localTasksByGoogleId.get(googleTaskId);
-        if (localTask && !localTask.isDeleted) {
-          onProgress?.(`Task deleted on cloud: ${localTask.title}`);
-          result.tasksDeleted++;
-          result.deletedTasks!.push(localTask.id);
-        }
+      if (localTask.googleId && !googleById.has(localTask.googleId) && !localTask.isDeleted) {
+        result.tasksDeleted++;
+        result.deletedTasks!.push(localTask.id);
       }
     }
 
     return result;
   }
+
+  async upload(
+    localTaskList: TaskList,
+    localTasks: Task[],
+    onProgress?: (message: string) => void
+  ): Promise<SyncResult> {
+
+    const result: SyncResult = {
+      success: true,
+      tasksAdded: 0,
+      tasksUpdated: 0,
+      tasksDeleted: 0,
+      createdTasks: [],
+    };
+
+    // Ensure we have a valid cloud list id (resolve or create)
+    const googleTaskListId = await this.ensureGoogleTaskList(localTaskList, onProgress);
+    result.taskListGoogleId = googleTaskListId;
+
+    onProgress?.('Uploading local changes to Google...');
+    const googleTasks = await this.tasksService.getTasks(googleTaskListId);
+    const googleById = new Map(googleTasks.filter(t => t.id).map(t => [t.id!, t]));
+
+    localTasks = localTasks.filter((t) => !t.isDeleted)
+    // 1) Create remote tasks for local tasks without googleId
+    for (const localTask of localTasks) {
+      if (localTask.isDeleted) continue;
+
+      if (!localTask.googleId) {
+        onProgress?.(`Creating remote task: ${localTask.title}`);
+        try {
+          // Use the create-specific payload that guarantees title is present
+          const createPayload = GoogleTasksService.localTaskToGoogleTask(localTask);
+          // ensure we don't accidentally include id/updated
+          delete (createPayload as any).id;
+          delete (createPayload as any).updated;
+
+          console.debug('Creating remote task payload:', createPayload);
+          const created = await this.tasksService.createTask(googleTaskListId, createPayload as any);
+          result.tasksAdded++;
+          if (created.id) result.createdTasks!.push({ localId: localTask.id, googleId: created.id });
+        } catch (err) {
+          console.error(`Failed to create Google task for localId=${localTask.id}:`, err);
+        }
+      }
+    }
+
+    // 2) Delete remote tasks for local tasks marked isDeleted
+    for (const localTask of localTasks) {
+      if (localTask.isDeleted && localTask.googleId) {
+        onProgress?.(`Deleting remote task: ${localTask.title}`);
+        try {
+          await this.tasksService.deleteTask(googleTaskListId, localTask.googleId);
+          result.tasksDeleted++;
+        } catch (err) {
+          console.error(`Failed to delete remote task ${localTask.googleId}:`, err);
+        }
+      }
+    }
+
+    // 3) Update remote tasks where local is newer
+    for (const localTask of localTasks) {
+      if (!localTask.googleId || localTask.isDeleted) continue;
+
+      const googleTask = googleById.get(localTask.googleId);
+      if (!googleTask) {
+        // remote missing — we treat this as deletion on cloud (caller policy),
+        // or you could choose to re-create it here.
+        continue;
+      }
+
+      const localModified = new Date(localTask.lastModified).getTime();
+      const googleUpdated = googleTask.updated ? new Date(googleTask.updated).getTime() : 0;
+      if (localModified > googleUpdated) {
+        onProgress?.(`Updating remote task: ${localTask.title}`);
+        try {
+          const patch = GoogleTasksService.localTaskToGoogleTaskPatch(localTask);
+          await this.tasksService.updateTask(googleTaskListId, localTask.googleId, patch as any);
+          result.tasksUpdated++;
+        } catch (err) {
+          console.error(`Failed to update Google task ${localTask.googleId}:`, err);
+        }
+      }
+    }
+    return result;
+  }
+
+  async reconcileTaskLists(
+    localTaskLists: TaskList[],
+    onProgress?: (message: string) => void
+  ): Promise<TaskListReconcileResult> {
+    try {
+      onProgress?.('Fetching task lists from Google...');
+      const cloudLists = await this.tasksService.getTaskLists();
+
+      // Build lookup maps
+      const cloudById = new Map<string, { id: string; title?: string; updated?: string }>(
+        cloudLists.filter(c => c.id).map(c => [c.id, c])
+      );
+      const cloudByTitle = new Map<string, { id: string; title?: string; updated?: string }>();
+      cloudLists.forEach(c => {
+        const key = (c.title || '').trim().toLowerCase();
+        if (key && !cloudByTitle.has(key)) cloudByTitle.set(key, c);
+      });
+
+      const localByGoogleId = new Map<string, TaskList>();
+      const localByTitle = new Map<string, TaskList>();
+      localTaskLists.forEach(l => {
+        if (l.googleId) localByGoogleId.set(l.googleId, l);
+        const key = (l.title || '').trim().toLowerCase();
+        if (key && !localByTitle.has(key)) localByTitle.set(key, l);
+      });
+
+      const addedTaskLists: TaskList[] = []; // cloud -> local
+      const createdTaskLists: Array<{ localId: string; googleId: string }> = []; // local -> cloud
+      const linkedTaskLists: Array<{ localId: string; googleId: string }> = []; // title linkings
+
+      // 1) Cloud lists that are not present locally -> create local empty TaskList
+      for (const cloud of cloudLists) {
+        if (!cloud.id) continue;
+        // If there's a local list already linked to this cloud id, skip
+        if (localByGoogleId.has(cloud.id)) continue;
+
+        // If a local list exists with the same title, link instead of creating
+        const titleKey = (cloud.title || '').trim().toLowerCase();
+        const localMatch = titleKey ? localByTitle.get(titleKey) : undefined;
+        if (localMatch) {
+          // local exists with same title but maybe no googleId -> link
+          if (!localMatch.googleId) {
+            linkedTaskLists.push({ localId: localMatch.id, googleId: cloud.id });
+          }
+          continue;
+        }
+
+        // No local match -> create a new empty local TaskList representation
+        const now = cloud.updated || new Date().toISOString();
+        const newLocal: TaskList = {
+          id: uuidv4(),
+          title: cloud.title || 'Untitled',
+          createdAt: now,
+          lastModified: now,
+          googleId: cloud.id,
+          googleUpdated: cloud.updated,
+        };
+        addedTaskLists.push(newLocal);
+      }
+
+      // 2) Local lists missing on cloud -> create empty cloud task list
+      for (const local of localTaskLists) {
+        // If local already has googleId and exists on cloud, skip
+        if (local.googleId && cloudById.has(local.googleId)) continue;
+
+        const titleKey = (local.title || '').trim().toLowerCase();
+        const cloudMatch = titleKey ? cloudByTitle.get(titleKey) : undefined;
+
+        if (cloudMatch) {
+          // Found cloud list by title -> link
+          linkedTaskLists.push({ localId: local.id, googleId: cloudMatch.id });
+          continue;
+        }
+
+        // No cloud match -> create on Google
+        try {
+          onProgress?.(`Creating cloud task list: ${local.title}`);
+          const created = await this.tasksService.createTaskList(local.title);
+          if (created && created.id) {
+            createdTaskLists.push({ localId: local.id, googleId: created.id });
+          }
+        } catch (err) {
+          console.error(`Failed to create cloud list for local '${local.title}':`, err);
+          // don't fail entire reconcile: continue with others
+        }
+      }
+
+      return {
+        success: true,
+        addedTaskLists: addedTaskLists.length ? addedTaskLists : undefined,
+        createdTaskLists: createdTaskLists.length ? createdTaskLists : undefined,
+        linkedTaskLists: linkedTaskLists.length ? linkedTaskLists : undefined,
+      };
+    } catch (error) {
+      console.error('reconcileTaskLists error', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+
+  private async resolveGoogleTaskList(localTaskList: TaskList): Promise<string> {
+    if (localTaskList.googleId) return localTaskList.googleId;
+    try {
+      const def = await this.tasksService.getTaskList('@default');
+      return def.id!;
+    } catch {
+      const created = await this.tasksService.createTaskList(localTaskList.title);
+      return created.id!;
+    }
+  }
+
+  private async ensureGoogleTaskList(
+    localTaskList: TaskList,
+    onProgress?: (message: string) => void
+  ): Promise<string> {
+    // Fetch cloud lists once (avoid multiple API calls)
+    onProgress?.('Fetching Google task lists...');
+    const cloudLists = await this.tasksService.getTaskLists();
+
+    // 1) If local already has googleId and it exists on cloud -> use it
+    if (localTaskList.googleId) {
+      const found = cloudLists.find(gl => gl.id === localTaskList.googleId);
+      if (found && found.id) {
+        onProgress?.('Using existing cloud task list.');
+        return found.id;
+      }
+      // googleId present but not found -> continue to try title matching
+      console.warn(`Local googleId ${localTaskList.googleId} not present in cloud lists; will try title match.`);
+    }
+
+    // 2) Match by title (case-insensitive) to avoid duplicates
+    const titleKey = (localTaskList.title || '').trim().toLowerCase();
+    if (titleKey) {
+      const match = cloudLists.find(gl => (gl.title || '').trim().toLowerCase() === titleKey);
+      if (match && match.id) {
+        onProgress?.(`Found cloud list by title: ${match.title}`);
+        return match.id;
+      }
+    }
+
+    // 3) No match -> create a new cloud list using the local title
+    try {
+      onProgress?.('Creating new Google task list...');
+      const created = await this.tasksService.createTaskList(localTaskList.title || 'Tasks');
+      onProgress?.(`Created Google list: ${created.title || created.id}`);
+      return created.id!;
+    } catch (err) {
+      console.error('Failed to create Google task list:', err);
+      throw new Error('Failed to create or resolve Google task list');
+    }
+  }
+
 }
+
+
+/* Taks Context:
+  const result = await syncService.reconcileTaskLists(taskLists, (m) => console.log(m));
+
+// Add cloud-only lists to local state
+if (result.addedTaskLists) {
+  setTaskLists(prev => [...prev, ...result.addedTaskLists!]);
+}
+
+// Update local lists that were created remotely
+if (result.createdTaskLists) {
+  setTaskLists(prev => prev.map(tl => {
+    const mapping = result.createdTaskLists!.find(c => c.localId === tl.id);
+    if (mapping) {
+      return { ...tl, googleId: mapping.googleId, googleUpdated: new Date().toISOString() };
+    }
+    return tl;
+  }));
+}
+
+// For linked lists found by title, set googleId (do this too)
+if (result.linkedTaskLists) {
+  setTaskLists(prev => prev.map(tl => {
+    const mapping = result.linkedTaskLists!.find(c => c.localId === tl.id);
+    if (mapping) {
+      return { ...tl, googleId: mapping.googleId, googleUpdated: new Date().toISOString() };
+    }
+    return tl;
+  }));
+}
+
+*/

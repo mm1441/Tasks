@@ -1,6 +1,6 @@
 // components/DueDateSectionList.tsx
-import React from 'react';
-import { SectionList, Text, View, StyleSheet, ViewStyle } from 'react-native';
+import React, { ComponentType, ReactElement, ReactNode } from 'react';
+import { SectionList, Text, View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import type { Task } from '../types/Task';
 import TaskCard from './TaskCard';
 import { buildDueDateSections } from '../utils/buildDueDateSections';
@@ -16,8 +16,10 @@ interface Props {
   style?: ViewStyle;
   onPress: (id: string) => void;
   onLongPress: (id: string) => void;
-  selectedIds?: string[]; // optional to display selected state
+  selectedIds?: string[];
   selectionMode?: boolean;
+  ListFooterComponent?: ComponentType<any> | ReactElement;
+  contentContainerStyle?: StyleProp<ViewStyle>;
 }
 
 export default function DueDateSectionList({
@@ -25,7 +27,9 @@ export default function DueDateSectionList({
   onPress,
   onLongPress,
   selectedIds = [],
-  selectionMode
+  selectionMode,
+  ListFooterComponent,
+  contentContainerStyle,
 }: Props) {
   const { theme } = useTheme();
   const styles = makeStyles(theme);
@@ -35,7 +39,8 @@ export default function DueDateSectionList({
     <SectionList
       sections={sections}
       keyExtractor={(item) => item.id}
-      contentContainerStyle={styles.listContent}
+      ListFooterComponent={ListFooterComponent}
+      contentContainerStyle={[styles.listContent, contentContainerStyle]}
       renderSectionHeader={({ section }) => (
         <Text style={styles.sectionTitle}>{section.title}</Text>
       )}
@@ -52,6 +57,7 @@ export default function DueDateSectionList({
     />
   );
 }
+
 
 const makeStyles = (theme: any) =>
   StyleSheet.create({

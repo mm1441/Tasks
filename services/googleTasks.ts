@@ -14,6 +14,15 @@ export interface GoogleTask {
   parent?: string;
 }
 
+export type GoogleTaskCreate = {
+  title: string;
+  notes?: string;
+  due?: string;
+  status?: 'needsAction' | 'completed';
+};
+export type GoogleTaskPatch = Partial<GoogleTaskCreate>;
+
+
 export interface GoogleTaskList {
   id: string;
   title: string;
@@ -128,12 +137,12 @@ export class GoogleTasksService {
   // Conversion helpers
   static googleTaskToLocalTask(googleTask: GoogleTask, taskListId: string, existingLocalId?: string): Task {
     return {
-      id: existingLocalId || googleTask.id || '',
+      id: existingLocalId || googleTask.id || '', // Double check this shi
       title: googleTask.title,
       description: googleTask.notes || undefined,
       dueDate: googleTask.due || null,
       isCompleted: googleTask.status === 'completed',
-      createdAt: googleTask.updated || new Date().toISOString(), // Google doesn't provide createdAt, use updated
+      createdAt: googleTask.updated || new Date().toISOString(),
       lastModified: googleTask.updated || new Date().toISOString(),
       googleId: googleTask.id,
       tasklistId: taskListId,
@@ -141,18 +150,25 @@ export class GoogleTasksService {
     };
   }
 
-  static localTaskToGoogleTask(task: Task): GoogleTask {
-    return {
-      id: task.googleId,
+  static localTaskToGoogleTask(task: Task): GoogleTaskCreate  {
+    const payload: GoogleTaskCreate  = {
       title: task.title,
-      notes: task.description || undefined,
+      notes: task.description && task.description.trim().length > 0 ? task.description : undefined,
       status: task.isCompleted ? 'completed' : 'needsAction',
-      due: task.dueDate || undefined,
-      updated: task.lastModified,
     };
+    // Convert to RFC3339 (toISOString)
+    if (task.dueDate) {
+      const d = new Date(task.dueDate);
+      if (!isNaN(d.getTime())) {
+        payload.due = d.toISOString();
+      } else {
+        console.warn('Invalid dueDate for task', task.id, task.dueDate);
+      }
+    }
+    return payload;
   }
 
-  static localTaskToGoogleTaskPatch(task: Task): Partial<GoogleTask> {
+  static localTaskToGoogleTaskPatch(task: Task): GoogleTaskCreate {
     return {
       title: task.title,
       notes: task.description || undefined,
@@ -164,7 +180,7 @@ export class GoogleTasksService {
 
   static googleTaskListToLocalTaskList(googleTaskList: GoogleTaskList): TaskList {
     return {
-      id: googleTaskList.id,
+      id: googleTaskList.id, // Triple check this shi
       title: googleTaskList.title,
       createdAt: googleTaskList.updated || new Date().toISOString(),
       lastModified: googleTaskList.updated || new Date().toISOString(),

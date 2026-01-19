@@ -20,7 +20,7 @@ type TopBarMenuItem = {
 type IconProp = ImageSourcePropType | React.ReactNode;
 
 type TopBarProps = {
-  title: string;
+  title?: string;
   leftIcon?: IconProp;
   onLeftIconPress?: (e?: GestureResponderEvent) => void;
   rightIcon1?: IconProp;
