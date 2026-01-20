@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { StatusBar } from "expo-status-bar";
 import { TaskProvider } from "./context/TaskContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { GoogleAuthProvider } from "./context/GoogleAuthContext";

@@ -23,6 +23,7 @@ interface TaskContextType {
   addTask: (task: Omit<Task, "id" | "createdAt" | "lastModified">) => Promise<void>;
   updateTask: (task: Task) => void;
   deleteTask: (id: string) => void;
+  permanentlyDeleteTask: (id: string) => void;
   reorderTasks: (newTasks: Task[]) => void;
   setCurrentTaskList: (id: string | null) => void;
   addTaskList: (taskList: Omit<TaskList, "id" | "createdAt" | "lastModified">) => void;
@@ -44,6 +45,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [currentTaskListId, setCurrentTaskListId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
+
+  const currentTaskList = useMemo(() => taskLists.find(tl => tl.id === currentTaskListId) ?? null, [taskLists, currentTaskListId]);
+
 
   useEffect(() => { loadData(); }, []);
 
@@ -121,7 +125,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
       if (!loadedTaskLists || loadedTaskLists.length === 0) {
         const now = new Date().toISOString();
-        loadedTaskLists = [ { id: uuidv4(), title: "My List", createdAt: now, lastModified: now } ];
+        loadedTaskLists = [{ id: uuidv4(), title: "My List", createdAt: now, lastModified: now }];
         await AsyncStorage.setItem(TASKLISTS_STORAGE_KEY, JSON.stringify(loadedTaskLists));
         console.debug("[TaskProvider] created default lists and persisted them");
       }
@@ -239,6 +243,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     Notifications.cancelScheduledNotificationAsync(id).catch(() => { });
   };
 
+  const permanentlyDeleteTask = (id: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    // Cancel any scheduled notification
+    if (task.notificationId) {
+      Notifications.cancelScheduledNotificationAsync(task.notificationId).catch(() => { });
+    }
+
+    // Remove the task completely from the local state
+    setTasks(prev => prev.filter(t => t.id !== id));
+  }
+
   const addTaskList = (taskListData: Omit<TaskList, "id" | "createdAt" | "lastModified">) => {
     const newTaskList: TaskList = { ...taskListData, id: uuidv4(), createdAt: new Date().toISOString(), lastModified: new Date().toISOString() };
     setTaskLists(prev => { const next = [...prev, newTaskList]; if (!currentTaskListId) setCurrentTaskList(newTaskList.id); return next; });
@@ -250,7 +267,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const tasksToCancel = tasks.filter(t => t.tasklistId === id);
     tasksToCancel.forEach(t => Notifications.cancelScheduledNotificationAsync(t.id).catch(() => { }));
     setTasks(prev => prev.filter(t => t.tasklistId !== id));
-    setTaskLists(prev => { const remaining = prev.filter(tl => tl.id !== id); if (currentTaskListId === id) setCurrentTaskList(remaining.length > 0 ? remaining[0].id : null); return remaining; });
+    setTaskLists(prev => {
+      const remaining = prev.filter(tl => tl.id !== id);
+      if (currentTaskListId === id)
+        setCurrentTaskList(remaining.length > 0 ? remaining[0].id : null);
+      return remaining;
+    });
   };
 
   const scheduleNotification = async (task: Task): Promise<string | null> => {
@@ -264,79 +286,288 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const downloadFromGoogle = async (
+    accessToken: string,
+    onProgress?: (message: string) => void
+  ): Promise<SyncResult> => {
 
-const downloadFromGoogle = async (
-  accessToken: string,
-  onProgress?: (message: string) => void
-): Promise<SyncResult> => {
-  if (!currentTaskList) throw new Error('No task list selected');
-  setSyncStatus('syncing');
-  const service = new SyncService(accessToken);
-  const result = await service.download(currentTaskList, tasks, onProgress);
+    if (!currentTaskList) throw new Error('No task list selected');
+    setSyncStatus('syncing');
+    setSyncError(null);
+    const service = new SyncService(accessToken);
 
-  setTasks(prev => {
-    let next = [...prev];
-    result.updatedTasks?.forEach(t => {
-      const i = next.findIndex(p => p.id === t.id);
-      if (i >= 0) next[i] = t;
+    // Call download (will also return lists that are cloud-only)
+    const result = await service.download(currentTaskList, tasks, taskLists, onProgress);
+
+    // 1) Apply task-list level changes first
+    setTaskLists(prev => {
+      let next = [...prev];
+
+      // a) Add any cloud-only lists that were returned (addedTaskLists)
+      if (result.addedTaskLists && result.addedTaskLists.length > 0) {
+        for (const cloudList of result.addedTaskLists) {
+          // avoid duplicates by googleId or title
+          const existsByGoogleId = cloudList.googleId && next.some(tl => tl.googleId === cloudList.googleId);
+          const existsByTitle = cloudList.title && next.some(tl => tl.title?.trim().toLowerCase() === cloudList.title!.trim().toLowerCase());
+          if (!existsByGoogleId && !existsByTitle) {
+            next.push(cloudList);
+          }
+        }
+      }
+
+      // b) Persist any linked lists suggested by title matching
+      if ((result.linkedTaskLists && result.linkedTaskLists.length > 0)) {
+        for (const link of result.linkedTaskLists) {
+          const index = next.findIndex(tl => tl.id === link.localId);
+          if (index >= 0) {
+            next[index] = { ...next[index], googleId: link.googleId, googleUpdated: new Date().toISOString() };
+          }
+        }
+      }
+
+      // c) If the download created/returned a googleId for the current list, ensure it's persisted
+      if (result.taskListGoogleId) {
+        const idx = next.findIndex(tl => tl.id === currentTaskList.id);
+        if (idx >= 0 && next[idx].googleId !== result.taskListGoogleId) {
+          next[idx] = { ...next[idx], googleId: result.taskListGoogleId, googleUpdated: new Date().toISOString() };
+        }
+      }
+
+      return next;
     });
-    result.addedTasks?.forEach(t => {
-      if (!next.some(p => p.googleId === t.googleId)) next.push(t);
+
+    // after receiving result from service.download(...)
+    if (result.updatedTaskLists) {
+      setTaskLists(prev => {
+        let next = [...prev];
+        for (const upd of result.updatedTaskLists!) {
+          const idx = next.findIndex(tl => tl.id === upd.localId);
+          if (idx >= 0) {
+            next[idx] = {
+              ...next[idx],
+              title: upd.title,
+              googleId: upd.googleId || next[idx].googleId,
+              googleUpdated: upd.googleUpdated ?? new Date().toISOString(),
+              lastModified: new Date().toISOString(),
+            };
+          }
+        }
+        return next;
+      });
+    }
+
+
+    // 2) Apply task-level changes (only for current list)
+    setTasks(prev => {
+      let next = [...prev];
+
+      // a) Replace/patch updated tasks coming from cloud (preserve local id mapping already set by service)
+      if (result.updatedTasks) {
+        for (const cloudTask of result.updatedTasks) {
+          const i = next.findIndex(t => t.id === cloudTask.id);
+          if (i >= 0) {
+            next[i] = cloudTask;
+          }
+        }
+      }
+
+      // b) Add new tasks from cloud (avoid duplicates by googleId)
+      if (result.addedTasks) {
+        for (const newTask of result.addedTasks) {
+          const exists = newTask.googleId && next.some(t => t.googleId === newTask.googleId);
+          if (!exists) {
+            next.push(newTask);
+          }
+        }
+      }
+
+      // c) Mark local tasks as deleted when cloud indicates deletion
+      if (result.deletedTasks) {
+        for (const localId of result.deletedTasks) {
+          const idx = next.findIndex(t => t.id === localId);
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], isDeleted: true, lastModified: new Date().toISOString() };
+          }
+        }
+      }
+
+      return next;
     });
-    result.deletedTasks?.forEach(id => {
-      const i = next.findIndex(p => p.id === id);
-      if (i >= 0) next[i] = { ...next[i], isDeleted: true };
+
+    // 3) If the service returned any createdTaskLists (unlikely for download, but safe to handle),
+    //    persist googleId mapping for the matching local lists
+    if (result.createdTaskLists && result.createdTaskLists.length > 0) {
+      setTaskLists(prev => {
+        let next = [...prev];
+        for (const mapping of result.createdTaskLists!) {
+          const idx = next.findIndex(tl => tl.id === mapping.localId);
+          if (idx >= 0 && next[idx].googleId !== mapping.googleId) {
+            next[idx] = { ...next[idx], googleId: mapping.googleId, googleUpdated: new Date().toISOString() };
+          }
+        }
+        return next;
+      });
+    }
+
+    // 4) Update currentTaskList googleId if provided (already handled above, but ensure currentTaskList referenced in state)
+    if (result.taskListGoogleId && currentTaskList.googleId !== result.taskListGoogleId) {
+      setTaskLists(prev => prev.map(tl =>
+        tl.id === currentTaskList.id ? { ...tl, googleId: result.taskListGoogleId, googleUpdated: new Date().toISOString() } : tl
+      ));
+    }
+
+    // Finalize UI status
+    if (result.success) {
+      setSyncStatus('success');
+      setTimeout(() => setSyncStatus('idle'), 1500);
+    } else {
+      setSyncStatus('error');
+      setSyncError(result.error || 'Download failed');
+      setTimeout(() => { setSyncStatus('idle'); setSyncError(null); }, 5000);
+    }
+
+    return result;
+  };
+
+
+  const uploadToGoogle = async (
+    accessToken: string,
+    onProgress?: (message: string) => void
+  ): Promise<SyncResult> => {
+
+    if (!currentTaskList)
+      throw new Error('No task list selected');
+    setSyncStatus('syncing');
+    setSyncError(null);
+    const service = new SyncService(accessToken);
+
+    // Call upload (will also create cloud lists for local-only lists)
+    const result = await service.upload(currentTaskList, tasks, onProgress);
+
+    // 1) Persist any cloud lists created for local lists
+    if (result.createdTaskLists && result.createdTaskLists.length > 0) {
+      setTaskLists(prev => {
+        let next = [...prev];
+        for (const mapping of result.createdTaskLists!) {
+          const idx = next.findIndex(tl => tl.id === mapping.localId);
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], googleId: mapping.googleId, googleUpdated: new Date().toISOString() };
+          }
+        }
+        return next;
+      });
+    }
+
+    // 2) Persist any linked lists suggested by title matching
+    if (result.linkedTaskLists && result.linkedTaskLists.length > 0) {
+      setTaskLists(prev => {
+        let next = [...prev];
+        for (const mapping of result.linkedTaskLists!) {
+          const idx = next.findIndex(tl => tl.id === mapping.localId);
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], googleId: mapping.googleId, googleUpdated: new Date().toISOString() };
+          }
+        }
+        return next;
+      });
+    }
+
+    // 3) If any cloud lists were discovered and returned as addedTaskLists (cloud->local),
+    //    merge them into local lists (avoid duplicates)
+    if (result.addedTaskLists && result.addedTaskLists.length > 0) {
+      setTaskLists(prev => {
+        let next = [...prev];
+        for (const cloudList of result.addedTaskLists!) {
+          const existsByGoogleId = cloudList.googleId && next.some(tl => tl.googleId === cloudList.googleId);
+          const existsByTitle = cloudList.title && next.some(tl => tl.title?.trim().toLowerCase() === cloudList.title!.trim().toLowerCase());
+          if (!existsByGoogleId && !existsByTitle) next.push(cloudList);
+        }
+        return next;
+      });
+    }
+
+    if (result.updatedTaskLists && result.updatedTaskLists.length > 0) {
+      setTaskLists(prev => {
+        let next = [...prev];
+        for (const upd of result.updatedTaskLists!) {
+          const idx = next.findIndex(tl => tl.id === upd.localId);
+          if (idx >= 0) {
+            next[idx] = {
+              ...next[idx],
+              title: upd.title,
+              googleId: upd.googleId || next[idx].googleId,
+              googleUpdated: upd.googleUpdated ?? new Date().toISOString(),
+              lastModified: new Date().toISOString(),
+            };
+          }
+        }
+        return next;
+      });
+    }
+
+    // 4) Apply task-level results: createdTasks -> set googleId on local tasks
+    setTasks(prev => {
+      let next = [...prev];
+      if (result.createdTasks) {
+        for (const { localId, googleId } of result.createdTasks) {
+          const idx = next.findIndex(t => t.id === localId);
+          if (idx >= 0) next[idx] = { ...next[idx], googleId };
+        }
+      }
+
+      // If upload returned addedTasks/updatedTasks (shouldn't be common), merge safely
+      if (result.updatedTasks) {
+        for (const t of result.updatedTasks) {
+          const i = next.findIndex(x => x.id === t.id);
+          if (i >= 0) next[i] = t;
+        }
+      }
+      if (result.addedTasks) {
+        for (const t of result.addedTasks) {
+          if (!next.some(x => x.googleId === t.googleId)) next.push(t);
+        }
+      }
+      // If upload returned deletedTasks (local ids to mark deleted), apply them
+      if (result.deletedTasks) {
+        for (const id of result.deletedTasks) {
+          const idx = next.findIndex(t => t.id === id);
+          if (idx >= 0) next[idx] = { ...next[idx], isDeleted: true };
+        }
+      }
+
+      return next;
     });
-    return next;
-  });
 
-  if (result.taskListGoogleId && currentTaskList.googleId !== result.taskListGoogleId) {
-    setTaskLists(prev => prev.map(tl =>
-      tl.id === currentTaskList.id ? { ...tl, googleId: result.taskListGoogleId } : tl
-    ));
-  }
+    // 5) Persist googleId for the current task list if provided
+    if (result.taskListGoogleId && currentTaskList.googleId !== result.taskListGoogleId) {
+      setTaskLists(prev => prev.map(tl =>
+        tl.id === currentTaskList.id ? { ...tl, googleId: result.taskListGoogleId, googleUpdated: new Date().toISOString() } : tl
+      ));
+    }
 
-  setSyncStatus('success');
-  setTimeout(() => setSyncStatus('idle'), 1500);
-  return result;
-};
+    // Finalize UI status
+    if (result.success) {
+      setSyncStatus('success');
+      setTimeout(() => setSyncStatus('idle'), 1500);
+    } else {
+      setSyncStatus('error');
+      setSyncError(result.error || 'Upload failed');
+      setTimeout(() => { setSyncStatus('idle'); setSyncError(null); }, 5000);
+    }
 
-const uploadToGoogle = async (
-  accessToken: string,
-  onProgress?: (message: string) => void
-): Promise<SyncResult> => {
-  if (!currentTaskList) throw new Error('No task list selected');
-  setSyncStatus('syncing');
-  const service = new SyncService(accessToken);
-  const result = await service.upload(currentTaskList, tasks, onProgress);
+    return result;
+  };
 
-  setTasks(prev => {
-    let next = [...prev];
-    result.createdTasks?.forEach(({ localId, googleId }) => {
-      const i = next.findIndex(t => t.id === localId);
-      if (i >= 0) next[i] = { ...next[i], googleId };
-    });
-    return next;
-  });
 
-  if (result.taskListGoogleId && currentTaskList.googleId !== result.taskListGoogleId) {
-    setTaskLists(prev => prev.map(tl =>
-      tl.id === currentTaskList.id ? { ...tl, googleId: result.taskListGoogleId } : tl
-    ));
-  }
-
-  setSyncStatus('success');
-  setTimeout(() => setSyncStatus('idle'), 1500);
-  return result;
-};
-
-  // Derived object for convenience
-  const currentTaskList = useMemo(() => taskLists.find(tl => tl.id === currentTaskListId) ?? null, [taskLists, currentTaskListId]);
-
-  if (isLoading) return null as any;
-
+  if (isLoading)
+    return null as any;
   return (
-    <TaskContext.Provider value={{ tasks, taskLists, currentTaskList, currentTaskListId, syncStatus, syncError, setCurrentTaskList, addTask, updateTask, deleteTask, reorderTasks, addTaskList, updateTaskList, deleteTaskList, downloadFromGoogle, uploadToGoogle }}>
+    <TaskContext.Provider value={{ 
+      tasks, taskLists, currentTaskList, currentTaskListId, 
+      syncStatus, syncError, setCurrentTaskList, addTask, updateTask, deleteTask, 
+      permanentlyDeleteTask, reorderTasks, addTaskList, updateTaskList, deleteTaskList, 
+      downloadFromGoogle, uploadToGoogle 
+    }}>
       {children}
     </TaskContext.Provider>
   );

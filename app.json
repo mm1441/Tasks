@@ -29,14 +29,14 @@
         "android-glance-widget-expo",
         {
           "glanceVersion": "1.1.1",
-          "kotlinVersion": "2.0.0",    // Or your preferred Kotlin version
+          "kotlinVersion": "2.0.0",
           "widgets": [
             {
-              "widgetClassName": "Home",   // Your widget's Kotlin class name
-              "configurationActivity": "HomeWidgetConfigurationActivity", // Optional: if you want a config screen
+              "widgetClassName": "Home",
+              "configurationActivity": "HomeWidgetConfigurationActivity",
               "widgetProviderInfo": {
                 "description": "Task list widget",
-                "updatePeriodMillis": 1800000, // 30 minutes (minimum for battery reasons)
+                "updatePeriodMillis": 1800000,
                 "minWidth": "250dp",
                 "minHeight": "110dp",
                 "targetCellWidth": "3",
@@ -59,8 +59,6 @@
       "backgroundColor": "#000000"
     },
     "extra": {
-      "EXPO_PUBLIC_ANDROID_CLIENT_ID": "73415059897-3ijunc0ke1pc3lccccocdhj9gl2kv07t.apps.googleusercontent.com",
-      "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "73415059897-bkf2pg91g2k6m8qdluh7bqnicjh34jkp.apps.googleusercontent.com",
       "eas": {
         "projectId": "e5d392f8-451d-40ba-b9de-6ac26f027771"
       }

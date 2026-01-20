@@ -150,8 +150,8 @@ export class GoogleTasksService {
     };
   }
 
-  static localTaskToGoogleTask(task: Task): GoogleTaskCreate  {
-    const payload: GoogleTaskCreate  = {
+  static localTaskToGoogleTask(task: Task): GoogleTaskCreate {
+    const payload: GoogleTaskCreate = {
       title: task.title,
       notes: task.description && task.description.trim().length > 0 ? task.description : undefined,
       status: task.isCompleted ? 'completed' : 'needsAction',
@@ -168,15 +168,29 @@ export class GoogleTasksService {
     return payload;
   }
 
-  static localTaskToGoogleTaskPatch(task: Task): GoogleTaskCreate {
-    return {
+  static localTaskToGoogleTaskCreate(task: Task): GoogleTaskCreate {
+    const payload: GoogleTaskCreate = {
       title: task.title,
-      notes: task.description || undefined,
       status: task.isCompleted ? 'completed' : 'needsAction',
-      due: task.dueDate || undefined,
     };
+
+    if (task.description?.trim()) {
+      payload.notes = task.description;
+    }
+
+    if (task.dueDate) {
+      const d = new Date(task.dueDate);
+      if (!isNaN(d.getTime())) {
+        payload.due = d.toISOString();
+      }
+    }
+
+    return payload;
   }
 
+  static localTaskToGoogleTaskPatch(task: Task): GoogleTaskPatch {
+    return this.localTaskToGoogleTaskCreate(task);
+  }
 
   static googleTaskListToLocalTaskList(googleTaskList: GoogleTaskList): TaskList {
     return {

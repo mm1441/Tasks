@@ -51,7 +51,6 @@ export default function AddTaskScreen({ route, navigation }: AddTaskProps) {
   };
 
   return (
-    // Explain KeyboardAvoidingView and it's behaviour
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}> 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>

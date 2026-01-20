@@ -36,6 +36,7 @@ import { RootStackParamList } from "../App";
 import HorizontalScrollWithUnderline from "../components/HorizontalScrollWithUnderline";
 import DueDateSectionList from "../components/DueDateSectionList";
 import CompletedTasksFooter from "../components/CompletedTasksFooter";
+import DeletedTasksFooter from "../components/DeletedTasksFooter";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 // WebBrowser.maybeCompleteAuthSession();
@@ -52,6 +53,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     tasks,
     addTask,
     deleteTask,
+    permanentlyDeleteTask,
     reorderTasks,
     taskLists,
     setCurrentTaskList,
@@ -90,6 +92,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [syncModalError, setSyncModalError] = useState<string | null>(null);
   const [syncModalBusy, setSyncModalBusy] = useState(false);
   const lastSyncActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  const [showDeletedTasks, setShowDeletedTasks] = useState(false);
 
   // Inline status (toast fallback)
   const [inlineStatus, setInlineStatus] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -135,10 +139,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   }, [taskLists, currentTaskList]);
 
   const displayedTasks = useMemo(() => {
-    if (!currentTaskListId) return [];
-    // Only show non-completed tasks in the main list.
-    let listTasks = tasks.filter(t => t.tasklistId === currentTaskListId && !t.isCompleted && !t.isDeleted);
+    if (!currentTaskListId) 
+      return [];
 
+    let listTasks = tasks.filter(t => 
+      t.tasklistId === currentTaskListId && !t.isCompleted && !t.isDeleted
+    );
     switch (sortOption) {
       case 'dueDateAsc':
         listTasks = listTasks.slice().sort((a, b) => {
@@ -157,10 +163,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         });
         break;
       case 'createdAtAsc':
-        listTasks = listTasks.slice().sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        listTasks = listTasks.slice().sort((a, b) => 
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
         break;
       case 'createdAtDesc':
-        listTasks = listTasks.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        listTasks = listTasks.slice().sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
         break;
       case 'custom':
       default:
@@ -172,7 +182,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const completedTasks = useMemo(() => {
     if (!currentTaskListId) return [];
-    return tasks.filter(t => t.tasklistId === currentTaskListId && t.isCompleted);
+    return tasks.filter(t => t.tasklistId === currentTaskListId && t.isCompleted && !t.isDeleted);
+  }, [tasks, currentTaskListId]);
+
+  const deletedTasks = useMemo(() => {
+    if (!currentTaskListId) return [];
+    return tasks.filter(t => t.tasklistId === currentTaskListId && t.isDeleted);
   }, [tasks, currentTaskListId]);
 
   const activeIndex = useMemo(() => {
@@ -467,7 +482,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     }
 
     let tasksToShare = displayedTasks;
-    const selectedTasks = displayedTasks.filter(t => selectedTaskIds.includes(t.id));
+    const selectedTasks = tasks.filter(t => selectedTaskIds.includes(t.id));
     if (selectedTasks.length !== 0) {
       tasksToShare = selectedTasks;
     }
@@ -492,7 +507,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       return line;
     });
 
-    const shareText = `${currentTaskList.title} ${taskLines.join('')}`;
+    const shareText = `${currentTaskList.title}\n${taskLines.join('\n')}`;
 
     try {
       await Share.share({ message: shareText });
@@ -503,6 +518,49 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   // Derived object for convenience
   const currentTaskListLocal = useMemo(() => currentTaskList, [currentTaskList]);
+
+  const footers = (
+    <View>
+      <CompletedTasksFooter
+        tasks={completedTasks}
+        isSelectionMode={isSelectionMode}
+        selectedTaskIds={selectedTaskIds}
+        onPressTask={(id) => {
+          if (isSelectionMode) toggleSelectTask(id);
+          else navigation.navigate('EditTask', { taskId: id });
+        }}
+        onLongPressTask={toggleSelectTask}
+      />
+      {showDeletedTasks && (
+        <DeletedTasksFooter
+          tasks={deletedTasks}
+          isSelectionMode={isSelectionMode}
+          selectedTaskIds={selectedTaskIds}
+          onPressTask={(id) => {
+            if (isSelectionMode) toggleSelectTask(id);
+            else navigation.navigate('EditTask', { taskId: id });
+          }}
+          onLongPressTask={toggleSelectTask}
+          onClearAll={() => {
+            Alert.alert(
+              'Clear deleted tasks',
+              'Permanently delete all deleted tasks in this list?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Clear',
+                  style: 'destructive',
+                  onPress: () => {
+                    deletedTasks.forEach((t) => permanentlyDeleteTask(t.id));
+                  },
+                },
+              ]
+            );
+          }}
+        />
+      )}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -552,7 +610,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                           text: 'Delete',
                           style: 'destructive',
                           onPress: () => {
-                            selectedTaskIds.forEach(id => deleteTask(id));
+                            selectedTaskIds.forEach(id => {
+                              const task = tasks.find(t => t.id === id);
+                              if (task?.isDeleted) {
+                                permanentlyDeleteTask(id);
+                              } else {
+                                deleteTask(id);
+                              }
+                            });
                             clearSelection();
                           }
                         }
@@ -590,7 +655,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               filterMenuItems={filterMenuItems}
               otherMenuItems={[
                 { label: 'Manage task lists', onPress: () => { navigation.navigate('TaskList'); } },
-                { label: 'Share task list', onPress: () => { shareTaskList(); } }
+                { label: 'Share task list', onPress: () => { shareTaskList(); } },
+                { label: 'Toggle show deleted tasks', onPress: () => { setShowDeletedTasks(!showDeletedTasks); } }
               ]}
             />
           )}
@@ -605,7 +671,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           }}
         />
 
-        {displayedTasks.length === 0 && completedTasks.length === 0 ? (
+        {displayedTasks.length === 0 && completedTasks.length === 0 && (!showDeletedTasks || deletedTasks.length === 0) ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No tasks yet</Text>
             <Text style={styles.emptySubtext}>Tap + to add your first task</Text>
@@ -618,18 +684,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               renderItem={renderDragListItem}
               onReordered={onReordered}
               contentContainerStyle={[styles.listContent, { paddingBottom: 24 }]}
-              ListFooterComponent={
-                <CompletedTasksFooter
-                  tasks={completedTasks}
-                  isSelectionMode={isSelectionMode}
-                  selectedTaskIds={selectedTaskIds}
-                  onPressTask={(id) => {
-                    if (isSelectionMode) toggleSelectTask(id);
-                    else navigation.navigate('EditTask', { taskId: id });
-                  }}
-                  onLongPressTask={toggleSelectTask}
-                />
-              }
+              ListFooterComponent={footers}
             />
           </View>
         ) : sortOption === 'dueDateAsc' ? (
@@ -641,18 +696,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               else navigation.navigate('EditTask', { taskId: id });
             }}
             onLongPress={(id: string) => toggleSelectTask(id)}
-            ListFooterComponent={
-              <CompletedTasksFooter
-                tasks={completedTasks}
-                isSelectionMode={isSelectionMode}
-                selectedTaskIds={selectedTaskIds}
-                onPressTask={(id) => {
-                  if (isSelectionMode) toggleSelectTask(id);
-                  else navigation.navigate('EditTask', { taskId: id });
-                }}
-                onLongPressTask={toggleSelectTask}
-              />
-            }
+            ListFooterComponent={footers}
             contentContainerStyle={{ paddingBottom: 24 }}
           />
         ) : (
@@ -675,18 +719,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 selectionMode={isSelectionMode}
               />
             )}
-            ListFooterComponent={
-              <CompletedTasksFooter
-                tasks={completedTasks}
-                isSelectionMode={isSelectionMode}
-                selectedTaskIds={selectedTaskIds}
-                onPressTask={(id) => {
-                  if (isSelectionMode) toggleSelectTask(id);
-                  else navigation.navigate('EditTask', { taskId: id });
-                }}
-                onLongPressTask={toggleSelectTask}
-              />
-            }
+            ListFooterComponent={footers}
           />
         )}
 
