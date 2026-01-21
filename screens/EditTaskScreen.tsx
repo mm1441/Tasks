@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,14 +16,15 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { RootStackParamList } from "../App";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-
 type EditTaskScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, "EditTask">;
   route: RouteProp<RootStackParamList, "EditTask">;
 };
 
 export default function EditTaskScreen({ navigation, route }: EditTaskScreenProps) {
-  const { tasks, updateTask } = useTasks();
+  // Note: useTasks is expected to provide taskLists in addition to tasks and updateTask.
+  // If your context exposes a different name, adjust the destructuring accordingly.
+  const { tasks, taskLists = [], updateTask } = useTasks();
   const { theme } = useTheme();
   const styles = makeStyles(theme);
   const taskId = route.params.taskId;
@@ -31,16 +32,35 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
 
   const [title, setTitle] = useState(task?.title || "");
   const [description, setDescription] = useState(task?.description || "");
-  const [dueDate, setDueDate] = useState(task?.dueDate || "");
+  const [dueDate, setDueDate] = useState<string | undefined>(task?.dueDate || undefined);
   const [showPicker, setShowPicker] = useState(false);
+
+  // Track the selected task list (tasklistId in the Task type). Default to task's value.
+  const [selectedTaskListId, setSelectedTaskListId] = useState<string | undefined>(
+    task?.tasklistId || (taskLists.length > 0 ? taskLists[0].id : undefined)
+  );
+
+  // Track completed state locally and show checkmark.
+  const [isCompleted, setIsCompleted] = useState<boolean>(!!task?.isCompleted);
+  const [showTaskListMenu, setShowTaskListMenu] = useState(false);
 
   useEffect(() => {
     if (task) {
       setTitle(task.title);
       setDescription(task.description || "");
-      setDueDate(task.dueDate || "");
+      setDueDate(task.dueDate || undefined);
+      setIsCompleted(!!task.isCompleted);
+      // Use the task's tasklistId if available, otherwise keep current or fallback to first list
+      setSelectedTaskListId(task.tasklistId || (taskLists.length > 0 ? taskLists[0].id : undefined));
     }
-  }, [task]);
+  }, [task, taskLists]);
+
+  // If taskLists load after mount and no selection is set, default to first list
+  useEffect(() => {
+    if ((!selectedTaskListId || selectedTaskListId === undefined) && taskLists.length > 0) {
+      setSelectedTaskListId(taskLists[0].id);
+    }
+  }, [taskLists]);
 
   const handleSave = () => {
     if (!title.trim() || !task) return;
@@ -50,6 +70,8 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
       title: title.trim(),
       description: description.trim() || undefined,
       dueDate: dueDate || undefined,
+      isCompleted,
+      tasklistId: selectedTaskListId || undefined,
     };
 
     updateTask(updatedTask);
@@ -89,18 +111,12 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
       <ScrollView style={styles.form}>
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Title *</Text>
-          <TextInput
-            style={styles.input}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Enter task title"
-            placeholderTextColor={theme.muted}
-            autoFocus
-          />
+          <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Enter task title" placeholderTextColor={theme.muted} autoFocus />
         </View>
-
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Description</Text>
+          <Text style={styles.label}>
+            Description
+          </Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             value={description}
@@ -125,6 +141,53 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
                 editable={false}
               />
             </View>
+          </TouchableOpacity>
+        </View>
+
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Task List</Text>
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setShowTaskListMenu((prev) => !prev)}
+          >
+            <Text style={styles.dropdownText}>
+              {taskLists.find((l) => l.id === selectedTaskListId)?.title || "Select list"}
+            </Text>
+          </TouchableOpacity>
+
+          {showTaskListMenu && (
+            <View style={styles.dropdownMenu}>
+              {taskLists.map((list) => {
+                const selected = list.id === selectedTaskListId;
+                return (
+                  <TouchableOpacity
+                    key={list.id}
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setSelectedTaskListId(list.id);
+                      setShowTaskListMenu(false);
+                    }}
+                  >
+                    <Text style={styles.dropdownItemText}>{list.title}</Text>
+                    {selected && <Text style={styles.checkmark}>✓</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Completed</Text>
+          <TouchableOpacity
+            style={styles.completedRow}
+            onPress={() => setIsCompleted((prev) => !prev)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: isCompleted }}
+          >
+            <Text style={styles.completedText}>{isCompleted ? "Completed" : "Mark as completed"}</Text>
+            <Text style={styles.checkmark}>{isCompleted ? "✓" : ""}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -202,5 +265,55 @@ const makeStyles = (theme: any) =>
     textArea: {
       height: 120,
       paddingTop: 16,
+    },
+    completedRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: 12,
+      borderRadius: 10,
+      backgroundColor: theme.surface,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    completedText: {
+      color: theme.text,
+      fontSize: 16,
+    },
+    checkmark: {
+      fontSize: 18,
+      color: theme.primary,
+      fontWeight: "700",
+    },
+    dropdown: {
+      backgroundColor: theme.surface,
+      borderRadius: 10,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    dropdownText: {
+      fontSize: 16,
+      color: theme.text,
+    },
+    dropdownMenu: {
+      marginTop: 8,
+      borderRadius: 10,
+      backgroundColor: theme.surface,
+      borderWidth: 1,
+      borderColor: theme.border,
+      overflow: "hidden",
+    },
+    dropdownItem: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    dropdownItemText: {
+      fontSize: 16,
+      color: theme.text,
     },
   });

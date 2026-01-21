@@ -238,6 +238,7 @@ export class SyncService {
     localTasks: Task[],
     onProgress?: (message: string) => void
   ): Promise<SyncResult> {
+
     const result: SyncResult = {
       success: true,
       tasksAdded: 0,
@@ -245,7 +246,7 @@ export class SyncService {
       tasksDeleted: 0,
       createdTasks: [],
     };
-
+    
     try {
       onProgress?.('Fetching cloud task lists...');
       const cloudLists = await this.tasksService.getTaskLists();
@@ -286,7 +287,6 @@ export class SyncService {
           }
         }
       }
-
 
       // Reconcile lists: 1) any local lists missing on cloud => create empty cloud lists
       const reconcileResult = await this.reconcileLocalToCloudLists(localTaskList, cloudLists, onProgress);
