@@ -7,18 +7,20 @@ import android.widget.RemoteViewsService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
+
+private const val APP_GROUP_IDENTIFIER = "group.com.magicmarinac.tasks.widgets"
+
 class TaskRemoteViewsFactory(private val context: Context, intent: Intent) : RemoteViewsService.RemoteViewsFactory {
     private var tasks: List<Map<String, Any>> = emptyList()
 
     override fun onCreate() {}
 
-    override fun onDataSetChanged() {
+override fun onDataSetChanged() {
         val prefs = context.getSharedPreferences(APP_GROUP_IDENTIFIER, Context.MODE_PRIVATE)
         val json = prefs.getString("tasks", "[]")
         val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-        tasks = Gson().fromJson(json, type)
+        tasks = Gson().fromJson(json, type) ?: emptyList()  // Safe null handling
     }
-
     override fun onDestroy() {
         tasks = emptyList()
     }
