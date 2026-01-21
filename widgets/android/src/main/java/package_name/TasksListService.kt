@@ -1,4 +1,4 @@
-package package_name.widget
+package package_name
 
 import android.content.Intent
 import android.widget.RemoteViewsService
