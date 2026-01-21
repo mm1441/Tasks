@@ -15,12 +15,14 @@ class TaskRemoteViewsFactory(private val context: Context, intent: Intent) : Rem
 
     override fun onCreate() {}
 
-override fun onDataSetChanged() {
+    override fun onDataSetChanged() {
         val prefs = context.getSharedPreferences(APP_GROUP_IDENTIFIER, Context.MODE_PRIVATE)
         val json = prefs.getString("tasks", "[]")
+        android.util.Log.d("TasksWidget", "prefs name=$APP_GROUP_IDENTIFIER json=$json")
         val type = object : TypeToken<List<Map<String, Any>>>() {}.type
         tasks = Gson().fromJson(json, type) ?: emptyList()  // Safe null handling
     }
+    
     override fun onDestroy() {
         tasks = emptyList()
     }

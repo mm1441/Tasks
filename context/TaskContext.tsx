@@ -9,7 +9,7 @@ import { TaskList } from "../types/TaskList";
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { SyncService, SyncResult } from "../services/SyncService";
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
 
@@ -110,10 +110,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           useAndroidSharedPreferences: Platform.OS === 'android'  // Use internal SharedPreferences on Android (no permissions needed)
         });
 
-        // WidgetModule.updateWidget()
-
-        // Optional: Force widget update (requires custom module, see below)
-        // await updateWidget();
+        if (Platform.OS === 'android' && NativeModules.UpdateWidget?.updateWidget) {
+          NativeModules.UpdateWidget.updateWidget();
+        }
 
         console.debug("[TaskProvider] Updated widget data with tasks:", tasksData.length);
       } catch (e) {
