@@ -9,6 +9,8 @@ import com.google.gson.reflect.TypeToken
 
 
 private const val APP_GROUP_IDENTIFIER = "group.com.magicmarinac.tasks.widgets"
+private const val PREFS_NAME = "tasks_widget_prefs"
+private const val TASKS_KEY = "tasks"
 
 class TaskRemoteViewsFactory(private val context: Context, intent: Intent) : RemoteViewsService.RemoteViewsFactory {
     private var tasks: List<Map<String, Any>> = emptyList()
@@ -16,13 +18,15 @@ class TaskRemoteViewsFactory(private val context: Context, intent: Intent) : Rem
     override fun onCreate() {}
 
     override fun onDataSetChanged() {
-        val prefs = context.getSharedPreferences(APP_GROUP_IDENTIFIER, Context.MODE_PRIVATE)
-        val json = prefs.getString("tasks", "[]")
-        android.util.Log.d("TasksWidget", "prefs name=$APP_GROUP_IDENTIFIER json=$json")
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val json = prefs.getString(TASKS_KEY, "[]")
+
+        Log.d("TasksWidget", "json=$json")
+
         val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-        tasks = Gson().fromJson(json, type) ?: emptyList()  // Safe null handling
+        tasks = Gson().fromJson(json, type) ?: emptyList()
     }
-    
+
     override fun onDestroy() {
         tasks = emptyList()
     }
