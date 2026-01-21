@@ -38,7 +38,7 @@
             "frequentUpdates": false,
             "entitlements": {
               "com.apple.security.application-groups": [
-                "group.com.example.tasksapp.widgets"
+                "com.magicmarinac.tasks.widgets"
               ]
             }
           },
