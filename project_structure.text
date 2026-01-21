@@ -1,0 +1,187 @@
+- .env
+- .expo
+  - devices.json
+  - README.md
+  - web
+    - cache
+      - production
+        - images
+          - android-adaptive-foreground
+            - android-adaptive-foreground-bc8689f27fbf81e27e4461e9391abca864366afb922ccef3932660163b5e5c8d-cover-transparent
+              - icon_108.png
+              - icon_162.png
+              - icon_216.png
+              - icon_324.png
+              - icon_432.png
+          - android-standard-circle
+            - android-standard-circle-bc8689f27fbf81e27e4461e9391abca864366afb922ccef3932660163b5e5c8d-cover-#ffffff
+              - icon_144.png
+              - icon_192.png
+              - icon_48.png
+              - icon_72.png
+              - icon_96.png
+          - android-standard-square
+            - android-standard-square-bc8689f27fbf81e27e4461e9391abca864366afb922ccef3932660163b5e5c8d-cover-#ffffff
+              - icon_144.png
+              - icon_192.png
+              - icon_48.png
+              - icon_72.png
+              - icon_96.png
+          - favicon
+            - favicon-24272cdaeff82cc5facdaccd982a6f05b60c4504704bbf94c19a6388659880bb-contain-transparent
+              - favicon-48.png
+          - splash-android
+            - splash-android-bc8689f27fbf81e27e4461e9391abca864366afb922ccef3932660163b5e5c8d-contain
+              - icon_200.png
+              - icon_300.png
+              - icon_400.png
+              - icon_600.png
+              - icon_800.png
+- .gitignore
+- @magicmarinac__tasks.jks
+- android
+  - .gitignore
+  - app
+    - build.gradle
+    - debug.keystore
+    - proguard-rules.pro
+    - src
+      - debug
+        - AndroidManifest.xml
+      - debugOptimized
+        - AndroidManifest.xml
+      - main
+        - AndroidManifest.xml
+        - java
+          - com
+            - magicmarinac
+              - tasks
+                - MainActivity.kt
+                - MainApplication.kt
+        - res
+          - drawable
+            - ic_launcher_background.xml
+            - rn_edit_text_material.xml
+          - drawable-hdpi
+            - splashscreen_logo.png
+          - drawable-mdpi
+            - splashscreen_logo.png
+          - drawable-xhdpi
+            - splashscreen_logo.png
+          - drawable-xxhdpi
+            - splashscreen_logo.png
+          - drawable-xxxhdpi
+            - splashscreen_logo.png
+          - layout
+            - task_item.xml
+            - widget_layout.xml
+          - mipmap-anydpi-v26
+            - ic_launcher.xml
+            - ic_launcher_round.xml
+          - mipmap-hdpi
+            - ic_launcher.webp
+            - ic_launcher_foreground.webp
+            - ic_launcher_round.webp
+          - mipmap-mdpi
+            - ic_launcher.webp
+            - ic_launcher_foreground.webp
+            - ic_launcher_round.webp
+          - mipmap-xhdpi
+            - ic_launcher.webp
+            - ic_launcher_foreground.webp
+            - ic_launcher_round.webp
+          - mipmap-xxhdpi
+            - ic_launcher.webp
+            - ic_launcher_foreground.webp
+            - ic_launcher_round.webp
+          - mipmap-xxxhdpi
+            - ic_launcher.webp
+            - ic_launcher_foreground.webp
+            - ic_launcher_round.webp
+          - values
+            - colors.xml
+            - strings.xml
+            - styles.xml
+          - xml
+            - tasks_widget_info.xml
+  - build.gradle
+  - gradle
+    - wrapper
+      - gradle-wrapper.jar
+      - gradle-wrapper.properties
+  - gradle.properties
+  - gradlew
+  - gradlew.bat
+  - settings.gradle
+- app.json
+- App.tsx
+- assets
+  - default-profile.png
+  - favicon.png
+  - vecteezy_checklist.png
+- babel.config.js
+- classpath.txt
+- components
+  - CompletedTasksFooter.tsx
+  - DeletedTasksFooter.tsx
+  - DueDateSectionList.tsx
+  - HorizontalScrollWithUnderline.tsx
+  - NoTasksFound.tsx
+  - TaskCard.tsx
+  - TopBar.tsx
+- context
+  - GoogleAuthContext.tsx
+  - TaskContext.tsx
+  - ThemeContext.tsx
+- credentials
+  - android
+    - keystore.jks
+- credentials.json
+- debug-deps.txt
+- eas.json
+- hooks
+  - useNetworkStatus.ts
+- index.js
+- kotlin-compile.log
+- navigation
+  - AppDrawer.tsx
+  - CustomDrawer.tsx
+- package-lock.json
+- package.json
+- screens
+  - EditTaskScreen.tsx
+  - HomeScreen.tsx
+  - NewTaskScreen.tsx
+  - TaskListScreen.tsx
+- services
+  - GoogleAuth.ts
+  - GoogleTasks.ts
+  - SyncService.ts
+- theme
+  - colors.ts
+- tsconfig.json
+- types
+  - Task.ts
+  - TaskList.ts
+- utils
+  - buildDueDateSections.ts
+- widgets
+  - android
+    - src
+      - main
+        - java
+          - com
+            - magicmarinac
+              - tasks
+                - widget
+                  - TaskRemoteViewsFactory.kt
+                  - TasksListService.kt
+                  - TasksWidgetProvider.kt
+      - res
+        - layout
+          - task_item.xml
+          - widget_layout.xml
+        - xml
+          - tasks_widget_info.xml
+  - ios
+    - TasksWidget.swift

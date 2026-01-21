@@ -1,4 +1,4 @@
-package com.magicmarinac.tasks.widget
+package package_name.widget
 
 import android.content.Intent
 import android.widget.RemoteViewsService

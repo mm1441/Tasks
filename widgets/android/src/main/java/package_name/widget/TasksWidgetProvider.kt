@@ -1,4 +1,4 @@
-package com.magicmarinac.tasks.widget
+package package_name.widget
 
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
