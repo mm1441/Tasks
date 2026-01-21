@@ -21,7 +21,7 @@ class TaskRemoteViewsFactory(private val context: Context, intent: Intent) : Rem
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val json = prefs.getString(TASKS_KEY, "[]")
 
-        Log.d("TasksWidget", "json=$json")
+        android.util.Log.d(("TasksWidget", "json=$json"))
 
         val type = object : TypeToken<List<Map<String, Any>>>() {}.type
         tasks = Gson().fromJson(json, type) ?: emptyList()
