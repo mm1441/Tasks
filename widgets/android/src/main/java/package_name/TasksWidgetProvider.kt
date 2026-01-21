@@ -23,7 +23,7 @@ class TasksWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == "com.example.tasksapp.UPDATE_WIDGET") {  // Custom action for force update
+        if (intent.action == "${context.packageName}.UPDATE_WIDGET") {  // Custom action for force update
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(ComponentName(context, TasksWidgetProvider::class.java))
             onUpdate(context, appWidgetManager, appWidgetIds)

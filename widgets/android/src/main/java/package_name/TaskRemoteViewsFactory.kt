@@ -1,6 +1,7 @@
 package package_name
 
 import android.content.Context
+import android.content.Intent
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.google.gson.Gson
