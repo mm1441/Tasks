@@ -16,6 +16,7 @@ class TasksWidgetProvider : AppWidgetProvider() {
             intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
             intent.data = Uri.parse(intent.toUri(Intent.URI_INTENT_SCHEME))
             views.setRemoteAdapter(R.id.list_view, intent)
+            views.setEmptyView(R.id.list_view, R.id.empty_view)
             appWidgetManager.updateAppWidget(appWidgetId, views)
             appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.list_view)
         }

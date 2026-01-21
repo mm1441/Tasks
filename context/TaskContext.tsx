@@ -38,7 +38,7 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 const TASKS_STORAGE_KEY = "@tasks";
 const TASKLISTS_STORAGE_KEY = "@tasklists";
 const CURRENT_TASKLIST_STORAGE_KEY = "@currentTaskList";
-const APP_GROUP_IDENTIFIER = 'com.magicmarinac.tasks';  // Match your app.json entitlements
+const APP_GROUP_IDENTIFIER = 'group.com.magicmarinac.tasks';  // Match your app.json entitlements
 
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -99,23 +99,28 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // Update widget whenever tasks or current list change
   useEffect(() => {
     if (isLoading) return;
+    if (!WidgetStorage) {
+      console.warn("[Widget] WidgetStorage not ready yet");
+      return;
+    }
 
     (async () => {
       try {
         const filteredTasks = tasks.filter(t => t.tasklistId === currentTaskListId && !t.isDeleted && !t.isCompleted);
         const tasksData = filteredTasks.map(t => ({ id: t.id, title: t.title, dueDate: t.dueDate, isCompleted: t.isCompleted }));
         console.log("[Widget] Updating with tasks:", JSON.stringify(tasksData));
+        console.log("NativeModules.WidgetStorage =", NativeModules.WidgetStorage);
 
         // Store in shared preferences (cross-platform)
         await SharedGroupPreferences.setItem('tasks', tasksData, APP_GROUP_IDENTIFIER, {
           useAndroidSharedPreferences: Platform.OS === 'android'  // Use internal SharedPreferences on Android (no permissions needed)
         });
 
-      if (Platform.OS === "android") {
-        const json = JSON.stringify(tasksData);
-        WidgetStorage.setTasks(json);
-        WidgetStorage.updateWidget();
-      }
+        if (Platform.OS === "android") {
+          const json = JSON.stringify(tasksData);
+          WidgetStorage.setTasks(json);
+          WidgetStorage.updateWidget();
+        }
 
         console.debug("[TaskProvider] Updated widget data with tasks:", tasksData.length);
       } catch (e) {
