@@ -25,33 +25,34 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker",
-      [
-        "android-glance-widget-expo",
-        {
-          "glanceVersion": "1.1.1",
-          "kotlinVersion": "2.0.0",
-          "widgets": [
-            {
-              "widgetClassName": "Home",
-              "configurationActivity": "HomeWidgetConfigurationActivity",
-              "widgetProviderInfo": {
-                "description": "Task list widget",
-                "updatePeriodMillis": 1800000,
-                "minWidth": "250dp",
-                "minHeight": "110dp",
-                "targetCellWidth": "3",
-                "targetCellHeight": "2",
-                "maxResizeWidth": "400dp",
-                "maxResizeHeight": "300dp",
-                "resizeMode": "horizontal|vertical",
-                "widgetCategory": "home_screen"
-              }
-            }
-          ]
-        }
-      ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@bittingz/expo-widgets",
+        {
+          "ios": {
+            "src": "./widgets/ios", // Create this folder for Swift files
+            "devTeamId": "YOUR_APPLE_DEV_TEAM_ID", // From developer.apple.com
+            "mode": "development", // Or "production"
+            "useLiveActivities": false,
+            "frequentUpdates": false,
+            "entitlements": {
+              "com.apple.security.application-groups": [
+                "group.com.example.tasksapp.widgets"
+              ]
+            }
+          },
+          "android": {
+            "src": "./widgets/android", // Create this folder for Kotlin/XML files
+            "widgets": [
+              {
+                "name": "TasksWidgetProvider", // Your widget class name
+                "resourceName": "@xml/tasks_widget_info" // Matches your XML file
+              }
+            ]
+          }
+        }
+      ]
     ],
     "splash": {
       "image": "assets/vecteezy_checklist.png",
@@ -63,6 +64,5 @@
         "projectId": "e5d392f8-451d-40ba-b9de-6ac26f027771"
       }
     }
-
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { TaskProvider } from "./context/TaskContext";
@@ -13,6 +13,7 @@ import * as Device from "expo-device";
 import * as SplashScreen from "expo-splash-screen";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import TaskListScreen from "./screens/TaskListScreen";
+
 
 export type RootStackParamList = {
   Root: undefined;

@@ -7,7 +7,6 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { Task } from "../types/Task";
 import React from "react";
-
 type RootStackParamList = {
   Home: undefined;
   AddTask: undefined;

@@ -2,13 +2,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import * as Notifications from "expo-notifications";
 import { SchedulableTriggerInputTypes } from "expo-notifications";
+import SharedGroupPreferences from 'react-native-shared-group-preferences';
 import * as SplashScreen from "expo-splash-screen";
 import type { Task } from "../types/Task";
 import { TaskList } from "../types/TaskList";
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { SyncService, SyncResult } from "../services/SyncService";
-import { WidgetStorage } from 'android-glance-widget-expo';
 import { Platform } from 'react-native';
 
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
@@ -37,6 +37,7 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 const TASKS_STORAGE_KEY = "@tasks";
 const TASKLISTS_STORAGE_KEY = "@tasklists";
 const CURRENT_TASKLIST_STORAGE_KEY = "@currentTaskList";
+const APP_GROUP_IDENTIFIER = 'com.magicmarinac.tasks';  // Match your app.json entitlements
 
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -96,18 +97,27 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   // Update widget whenever tasks or current list change
   useEffect(() => {
-    if (isLoading || Platform.OS !== 'android') return;
+    if (isLoading) return;
 
     (async () => {
       try {
         const filteredTasks = tasks.filter(t => t.tasklistId === currentTaskListId && !t.isDeleted && !t.isCompleted);
         const tasksData = filteredTasks.map(t => ({ id: t.id, title: t.title, dueDate: t.dueDate, isCompleted: t.isCompleted }));
         console.log("[Widget] Updating with tasks:", JSON.stringify(tasksData));
-        await WidgetStorage.set('tasks', JSON.stringify(tasksData));
-        await WidgetStorage.updateWidget('HomeReceiver');
-        console.debug("[TaskProvider] Updated widget with tasks:", tasksData.length);
+
+        // Store in shared preferences (cross-platform)
+        await SharedGroupPreferences.setItem('tasks', tasksData, APP_GROUP_IDENTIFIER, {
+          useAndroidSharedPreferences: Platform.OS === 'android'  // Use internal SharedPreferences on Android (no permissions needed)
+        });
+
+        // WidgetModule.updateWidget()
+
+        // Optional: Force widget update (requires custom module, see below)
+        // await updateWidget();
+
+        console.debug("[TaskProvider] Updated widget data with tasks:", tasksData.length);
       } catch (e) {
-        console.error("Failed to update widget:", e);
+        console.error("Failed to update widget data:", e);
       }
     })();
   }, [tasks, currentTaskListId, isLoading]);
@@ -562,11 +572,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   if (isLoading)
     return null as any;
   return (
-    <TaskContext.Provider value={{ 
-      tasks, taskLists, currentTaskList, currentTaskListId, 
-      syncStatus, syncError, setCurrentTaskList, addTask, updateTask, deleteTask, 
-      permanentlyDeleteTask, reorderTasks, addTaskList, updateTaskList, deleteTaskList, 
-      downloadFromGoogle, uploadToGoogle 
+    <TaskContext.Provider value={{
+      tasks, taskLists, currentTaskList, currentTaskListId,
+      syncStatus, syncError, setCurrentTaskList, addTask, updateTask, deleteTask,
+      permanentlyDeleteTask, reorderTasks, addTaskList, updateTaskList, deleteTaskList,
+      downloadFromGoogle, uploadToGoogle
     }}>
       {children}
     </TaskContext.Provider>

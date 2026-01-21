@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, FC } from 'react';
+import { useRef, useState, useEffect, FC } from 'react';
 import {
   View,
   FlatList,

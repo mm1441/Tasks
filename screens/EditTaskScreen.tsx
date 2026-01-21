@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -22,8 +22,6 @@ type EditTaskScreenProps = {
 };
 
 export default function EditTaskScreen({ navigation, route }: EditTaskScreenProps) {
-  // Note: useTasks is expected to provide taskLists in addition to tasks and updateTask.
-  // If your context exposes a different name, adjust the destructuring accordingly.
   const { tasks, taskLists = [], updateTask } = useTasks();
   const { theme } = useTheme();
   const styles = makeStyles(theme);
@@ -50,7 +48,6 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
       setDescription(task.description || "");
       setDueDate(task.dueDate || undefined);
       setIsCompleted(!!task.isCompleted);
-      // Use the task's tasklistId if available, otherwise keep current or fallback to first list
       setSelectedTaskListId(task.tasklistId || (taskLists.length > 0 ? taskLists[0].id : undefined));
     }
   }, [task, taskLists]);

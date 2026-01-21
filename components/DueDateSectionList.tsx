@@ -1,5 +1,5 @@
 // components/DueDateSectionList.tsx
-import React, { ComponentType, ReactElement, ReactNode } from 'react';
+import { ComponentType, ReactElement, ReactNode } from 'react';
 import { SectionList, Text, View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import type { Task } from '../types/Task';
 import TaskCard from './TaskCard';
