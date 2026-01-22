@@ -9,12 +9,27 @@ class WidgetStorageModule(
 
   override fun getName() = "WidgetStorage"
 
+  private val prefsName = "tasks_widget_prefs"
+
   @ReactMethod
   fun setTasks(json: String) {
     val prefs = reactContext
-      .getSharedPreferences("tasks_widget_prefs", Context.MODE_PRIVATE)
-
+      .getSharedPreferences(prefsName, Context.MODE_PRIVATE)
     prefs.edit().putString("tasks", json).apply()
+  }
+
+  @ReactMethod
+  fun setTaskLists(json: String) {
+    val prefs = reactContext
+      .getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+    prefs.edit().putString("taskLists", json).apply()
+  }
+
+  @ReactMethod
+  fun setCurrentTaskListId(id: String) {
+    val prefs = reactContext
+      .getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+    prefs.edit().putString("currentTaskListId", id).apply()
   }
 
   @ReactMethod

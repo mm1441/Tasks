@@ -9,9 +9,9 @@ import { TaskList } from "../types/TaskList";
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { SyncService, SyncResult } from "../services/SyncService";
-import { Platform, NativeModules } from 'react-native';
-const { WidgetStorage } = NativeModules;
+import { Platform, NativeModules, AppState } from 'react-native';
 
+const { WidgetStorage } = NativeModules;
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
 
 interface TaskContextType {
@@ -38,7 +38,8 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 const TASKS_STORAGE_KEY = "@tasks";
 const TASKLISTS_STORAGE_KEY = "@tasklists";
 const CURRENT_TASKLIST_STORAGE_KEY = "@currentTaskList";
-const APP_GROUP_IDENTIFIER = 'group.com.magicmarinac.tasks';  // Match your app.json entitlements
+const PREFS_NAME = "tasks_widget_prefs"
+ const TASKS_KEY = "tasks"
 
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -52,6 +53,22 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
 
   useEffect(() => { loadData(); }, []);
+
+  // Reload data when app comes to foreground (to sync widget changes)
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active" && !isLoading) {
+        console.debug("[TaskProvider] App came to foreground, reloading data to sync widget changes");
+        loadData();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isLoading]);
 
   // Persist tasks whenever they change
   useEffect(() => {
@@ -96,38 +113,80 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     })();
   }, [currentTaskListId, isLoading]);
 
-  // Update widget whenever tasks or current list change
+  // Update widget whenever tasks, taskLists, or current list change
   useEffect(() => {
     if (isLoading) return;
-    if (!WidgetStorage) {
-      console.warn("[Widget] WidgetStorage not ready yet");
-      return;
-    }
+    if (Platform.OS !== "android") return;
 
-    (async () => {
+    // Retry logic for WidgetStorage availability
+    const updateWidgetData = async (retries = 3, delay = 500) => {
+      if (!WidgetStorage) {
+        if (retries > 0) {
+          console.warn(`[Widget] WidgetStorage not ready yet, retrying in ${delay}ms... (${retries} retries left)`);
+          setTimeout(() => updateWidgetData(retries - 1, delay), delay);
+          return;
+        } else {
+          console.warn("[Widget] WidgetStorage not available after retries");
+          return;
+        }
+      }
+
       try {
-        const filteredTasks = tasks.filter(t => t.tasklistId === currentTaskListId && !t.isDeleted && !t.isCompleted);
-        const tasksData = filteredTasks.map(t => ({ id: t.id, title: t.title, dueDate: t.dueDate, isCompleted: t.isCompleted }));
-        console.log("[Widget] Updating with tasks:", JSON.stringify(tasksData));
-        console.log("NativeModules.WidgetStorage =", NativeModules.WidgetStorage);
+        const filteredTasks = tasks.filter(t => 
+          t.tasklistId === currentTaskListId && 
+          !t.isDeleted
+        );
+        const tasksData = filteredTasks.map(t => ({ 
+          id: t.id, 
+          title: t.title, 
+          dueDate: t.dueDate, 
+          isCompleted: t.isCompleted
+        }));
 
-        // Store in shared preferences (cross-platform)
-        await SharedGroupPreferences.setItem('tasks', tasksData, APP_GROUP_IDENTIFIER, {
-          useAndroidSharedPreferences: Platform.OS === 'android'  // Use internal SharedPreferences on Android (no permissions needed)
-        });
+        const taskListsData = taskLists.map(tl => ({
+          id: tl.id,
+          title: tl.title
+        }));
 
-        if (Platform.OS === "android") {
-          const json = JSON.stringify(tasksData);
-          WidgetStorage.setTasks(json);
-          WidgetStorage.updateWidget();
+        console.log("[Widget] Updating with tasks: ", JSON.stringify(tasksData));
+        console.log("[Widget] Updating with taskLists: ", JSON.stringify(taskListsData));
+
+        // Store in shared preferences via native module (Android)
+        const tasksJson = JSON.stringify(tasksData);
+        const taskListsJson = JSON.stringify(taskListsData);
+        
+        WidgetStorage.setTasks(tasksJson);
+        WidgetStorage.setTaskLists(taskListsJson);
+        if (currentTaskListId) {
+          WidgetStorage.setCurrentTaskListId(currentTaskListId);
+        }
+        // Force widget update to refresh the UI
+        WidgetStorage.updateWidget();
+        
+        // Also trigger a widget refresh after a short delay to ensure data is written
+        setTimeout(() => {
+          if (WidgetStorage && WidgetStorage.updateWidget) {
+            WidgetStorage.updateWidget();
+          }
+        }, 100);
+
+        // Also store in SharedGroupPreferences for iOS compatibility 
+        if (Platform.OS === "ios") {
+          await SharedGroupPreferences.setItem('tasks', tasksData, PREFS_NAME);
+          await SharedGroupPreferences.setItem('taskLists', taskListsData, PREFS_NAME);
+          if (currentTaskListId) {
+            await SharedGroupPreferences.setItem('currentTaskListId', currentTaskListId, PREFS_NAME);
+          }
         }
 
-        console.debug("[TaskProvider] Updated widget data with tasks:", tasksData.length);
+        console.debug("[TaskProvider] Updated widget data with tasks:", tasksData.length, "taskLists:", taskListsData.length);
       } catch (e) {
         console.error("Failed to update widget data:", e);
       }
-    })();
-  }, [tasks, currentTaskListId, isLoading]);
+    };
+
+    updateWidgetData();
+  }, [tasks, taskLists, currentTaskListId, isLoading]);
 
   const loadData = async () => {
     try {

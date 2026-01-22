@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import { useEffect, useRef } from "react";
+import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { TaskProvider } from "./context/TaskContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
@@ -13,6 +13,7 @@ import * as Device from "expo-device";
 import * as SplashScreen from "expo-splash-screen";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import TaskListScreen from "./screens/TaskListScreen";
+import { Linking } from "react-native";
 
 
 export type RootStackParamList = {
@@ -37,6 +38,7 @@ Notifications.setNotificationHandler({
 function NavigationInner() {
   // safe to call useTheme because NavigationInner is rendered *inside* ThemeProvider
   const { theme, scheme } = useTheme();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
 
   const navTheme = {
     ...(scheme === "dark" ? NavDark : NavDefault),
@@ -50,8 +52,70 @@ function NavigationInner() {
     },
   };
 
+  // Handle deep links from widget
+  useEffect(() => {
+    const handleDeepLink = (url: string, retryCount = 0) => {
+      // Filter out Expo dev client URLs
+      if (url.includes("expo-development-client") || url.includes("exp+tasks://expo")) {
+        console.log("[App] Ignoring Expo dev client URL");
+        return;
+      }
+
+      // Only process our app's deep links
+      if (!url.includes("com.magicmarinac.tasks://")) {
+        console.log("[App] Ignoring non-widget deep link:", url);
+        return;
+      }
+
+      console.log("[App] Deep link received:", url);
+
+      // Maximum 5 retries (1 second total)
+      if (!navigationRef.isReady()) {
+        if (retryCount < 5) {
+          console.log("[App] Navigation not ready yet, waiting... (retry", retryCount + 1, ")");
+          setTimeout(() => handleDeepLink(url, retryCount + 1), 200);
+          return;
+        } else {
+          console.log("[App] Navigation not ready after retries, giving up");
+          return;
+        }
+      }
+
+      if (url.includes("editTask")) {
+        const taskIdMatch = url.match(/taskId=([^&]+)/);
+        if (taskIdMatch && taskIdMatch[1]) {
+          const taskId = taskIdMatch[1];
+          console.log("[App] Navigating to EditTask with taskId:", taskId);
+          navigationRef.navigate("EditTask", { taskId });
+        }
+      } else if (url.includes("addTask")) {
+        console.log("[App] Navigating to AddTask");
+        navigationRef.navigate("AddTask", {});
+      }
+    };
+
+    // Handle initial URL if app was opened via deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log("[App] Initial URL:", url);
+        // Wait a bit for navigation to be ready
+        setTimeout(() => handleDeepLink(url), 500);
+      }
+    });
+
+    // Listen for deep links while app is running
+    const subscription = Linking.addEventListener("url", (event) => {
+      console.log("[App] Deep link event:", event.url);
+      handleDeepLink(event.url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [navigationRef]);
+
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
       {/* <StatusBar style={scheme === "dark" ? "light" : "dark"} /> */}
       <Stack.Navigator
         id="AppStack"
@@ -73,7 +137,7 @@ function NavigationInner() {
           component={EditTaskScreen}
           options={{ presentation: "modal" }}
         />
-        <Stack.Screen 
+        <Stack.Screen
           name="TaskList"
           component={TaskListScreen}
         />

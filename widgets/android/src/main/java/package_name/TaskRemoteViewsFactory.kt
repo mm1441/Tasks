@@ -1,7 +1,10 @@
-package com.magicmarinac.tasks
+package package_name
 
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
@@ -10,6 +13,7 @@ import com.google.gson.reflect.TypeToken
 
 private const val PREFS_NAME = "tasks_widget_prefs"
 private const val TASKS_KEY = "tasks"
+private const val TAG = "TasksWidget"
 
 class TaskRemoteViewsFactory(
     private val context: Context,
@@ -17,35 +21,111 @@ class TaskRemoteViewsFactory(
 ) : RemoteViewsService.RemoteViewsFactory {
 
     private var tasks: List<Map<String, Any>> = emptyList()
+    private val gson = Gson()
+    private val appWidgetId: Int = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
 
-    override fun onCreate() {}
+    override fun onCreate() {
+        Log.d(TAG, "onCreate called")
+        loadTasks()
+    }
 
     override fun onDataSetChanged() {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val json = prefs.getString(TASKS_KEY, "[]")
+        Log.d(TAG, "onDataSetChanged called")
+        loadTasks()
+    }
 
-        Log.d("TasksWidget", "json=$json")
+    private fun loadTasks() {
+        try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val json = prefs.getString(TASKS_KEY, "[]") ?: "[]"
+            
+            Log.d(TAG, "Loading tasks from SharedPreferences")
+            Log.d(TAG, "JSON length: ${json.length}, JSON: $json")
 
-        val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-        tasks = Gson().fromJson(json, type) ?: emptyList()
+            val type = object : TypeToken<List<Map<String, Any>>>() {}.type
+            val parsedTasks = gson.fromJson<List<Map<String, Any>>>(json, type)
+            tasks = parsedTasks ?: emptyList()
+            
+            Log.d(TAG, "Loaded ${tasks.size} tasks")
+            tasks.forEachIndexed { index, task ->
+                Log.d(TAG, "Task $index: ${task["title"]}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading tasks", e)
+            tasks = emptyList()
+        }
     }
 
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy called")
         tasks = emptyList()
     }
 
     override fun getCount(): Int {
-        Log.d("TasksWidget", "getCount = ${tasks.size}")
-        return tasks.size
+        val count = tasks.size
+        Log.d(TAG, "getCount() called, returning: $count")
+        return count
     }
 
     override fun getViewAt(position: Int): RemoteViews {
-        val rv = RemoteViews(context.packageName, R.layout.task_item)
-        rv.setTextViewText(
-            R.id.task_title,
-            tasks[position]["title"] as? String ?: ""
-        )
-        return rv
+        Log.d(TAG, "getViewAt($position) called")
+        try {
+            if (position >= tasks.size) {
+                Log.e(TAG, "Position $position out of bounds, tasks.size = ${tasks.size}")
+                return RemoteViews(context.packageName, R.layout.task_item).apply {
+                    setTextViewText(R.id.task_title, "")
+                }
+            }
+            
+            val task = tasks[position]
+            val taskId = task["id"] as? String ?: ""
+            val title = task["title"] as? String ?: ""
+            val isCompleted = task["isCompleted"] as? Boolean ?: false
+            
+            Log.d(TAG, "Creating view for task at position $position: $title (completed: $isCompleted)")
+            
+            val rv = RemoteViews(context.packageName, R.layout.task_item)
+            
+            // Set task title
+            rv.setTextViewText(R.id.task_title, title)
+            
+            // Set checkbox icon based on completion state
+            val checkboxIcon = if (isCompleted) {
+                android.R.drawable.checkbox_on_background
+            } else {
+                android.R.drawable.checkbox_off_background
+            }
+            rv.setImageViewResource(R.id.task_checkbox, checkboxIcon)
+            
+            // Set click intent for checkbox (toggle completion)
+            // Use individual PendingIntent with unique request code per widget: appWidgetId * 10000 + position
+            val checkboxIntent = Intent().apply {
+                action = "${context.packageName}.TOGGLE_TASK"
+                putExtra("taskId", taskId)
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                data = Uri.parse("widget://task/checkbox/$position")
+            }
+            val checkboxPendingIntent = PendingIntent.getBroadcast(
+                context,
+                appWidgetId * 10000 + position, // Unique per widget and position
+                checkboxIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            rv.setOnClickPendingIntent(R.id.task_checkbox, checkboxPendingIntent)
+            
+            // Set fillInIntent for entire task item (open EditTaskScreen) - uses template
+            val taskFillIntent = Intent().apply {
+                data = Uri.parse("com.magicmarinac.tasks://editTask?taskId=$taskId")
+            }
+            rv.setOnClickFillInIntent(R.id.task_item_container, taskFillIntent)
+            
+            return rv
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in getViewAt($position)", e)
+            return RemoteViews(context.packageName, R.layout.task_item).apply {
+                setTextViewText(R.id.task_title, "Error")
+            }
+        }
     }
 
     override fun getLoadingView(): RemoteViews? = null
