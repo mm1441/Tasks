@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { TaskProvider } from "./context/TaskContext";
@@ -39,6 +39,12 @@ function NavigationInner() {
   // safe to call useTheme because NavigationInner is rendered *inside* ThemeProvider
   const { theme, scheme } = useTheme();
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  
+  // Store pending navigation to execute once navigation is ready
+  const pendingNavigationRef = useRef<{ screen: string; params: any } | null>(null);
+  
+  // Track if we've processed the initial URL (only process once on app startup)
+  const initialUrlProcessedRef = useRef(false);
 
   const navTheme = {
     ...(scheme === "dark" ? NavDark : NavDefault),
@@ -52,9 +58,53 @@ function NavigationInner() {
     },
   };
 
+  // Execute pending navigation once navigation is ready
+  useEffect(() => {
+    const checkAndExecutePending = () => {
+      if (pendingNavigationRef.current && navigationRef.isReady()) {
+        const { screen, params } = pendingNavigationRef.current;
+        console.log(`[App] Executing pending navigation to ${screen}`, params);
+        
+        // If navigating to EditTask and it's already on stack, go back first
+        if (screen === "EditTask") {
+          const state = navigationRef.getState();
+          const editTaskIndex = state?.routes.findIndex(r => r.name === "EditTask");
+          if (editTaskIndex !== undefined && editTaskIndex >= 0) {
+            navigationRef.goBack();
+            setTimeout(() => {
+              navigationRef.navigate(screen as any, params);
+            }, 100);
+          } else {
+            navigationRef.navigate(screen as any, params);
+          }
+        } else {
+          navigationRef.navigate(screen as any, params);
+        }
+        pendingNavigationRef.current = null;
+      }
+    };
+    
+    // Check immediately
+    checkAndExecutePending();
+    
+    // Also check periodically until pending is cleared
+    const interval = setInterval(() => {
+      checkAndExecutePending();
+      if (!pendingNavigationRef.current) {
+        clearInterval(interval);
+      }
+    }, 100);
+    
+    return () => clearInterval(interval);
+  }, [navigationRef]);
+  
   // Handle deep links from widget
   useEffect(() => {
     const handleDeepLink = (url: string, retryCount = 0) => {
+      console.log("[App] ========== Deep Link Handler Called ==========");
+      console.log("[App] Full URL received:", url);
+      console.log("[App] Retry count:", retryCount);
+      
       // Filter out Expo dev client URLs
       if (url.includes("expo-development-client") || url.includes("exp+tasks://expo")) {
         console.log("[App] Ignoring Expo dev client URL");
@@ -67,26 +117,92 @@ function NavigationInner() {
         return;
       }
 
-      console.log("[App] Deep link received:", url);
+      console.log("[App] ✓ Valid deep link detected:", url);
+      console.log("[App] Checking if navigation is ready...");
 
       // Maximum 5 retries (1 second total)
       if (!navigationRef.isReady()) {
         if (retryCount < 5) {
-          console.log("[App] Navigation not ready yet, waiting... (retry", retryCount + 1, ")");
+          console.log("[App] ⏳ Navigation not ready yet, waiting... (retry", retryCount + 1, ")");
           setTimeout(() => handleDeepLink(url, retryCount + 1), 200);
           return;
         } else {
-          console.log("[App] Navigation not ready after retries, giving up");
+          console.log("[App] ❌ Navigation not ready after retries, giving up");
           return;
         }
       }
 
+      console.log("[App] ✓ Navigation is ready, processing deep link...");
+
       if (url.includes("editTask")) {
+        console.log("[App] → Processing editTask deep link");
         const taskIdMatch = url.match(/taskId=([^&]+)/);
+        console.log("[App] TaskId regex match result:", taskIdMatch);
+        
         if (taskIdMatch && taskIdMatch[1]) {
           const taskId = taskIdMatch[1];
-          console.log("[App] Navigating to EditTask with taskId:", taskId);
-          navigationRef.navigate("EditTask", { taskId });
+          console.log("[App] ✓ TaskId extracted:", taskId);
+          console.log("[App] → Navigating to EditTask screen with taskId:", taskId);
+          
+          try {
+            // Navigate immediately if ready, otherwise store for later
+            if (navigationRef.isReady()) {
+              console.log("[App] Navigation is ready, executing navigate...");
+              // Check if EditTask is already on the stack - if so, go back first then navigate
+              const state = navigationRef.getState();
+              const editTaskIndex = state?.routes.findIndex(r => r.name === "EditTask");
+              
+              if (editTaskIndex !== undefined && editTaskIndex >= 0) {
+                console.log("[App] EditTask already on stack at index", editTaskIndex, "- going back first");
+                // Go back to remove the existing EditTask screen
+                navigationRef.goBack();
+                // Then navigate to the new task after a brief delay
+                setTimeout(() => {
+                  navigationRef.navigate("EditTask", { taskId });
+                  console.log("[App] ✓ Navigated to new EditTask after going back");
+                }, 100);
+              } else {
+                // EditTask not on stack, navigate normally
+                navigationRef.navigate("EditTask", { taskId });
+                console.log("[App] ✓ Navigation command sent successfully");
+              }
+            } else {
+              console.log("[App] ⏳ Navigation not ready, storing pending navigation...");
+              pendingNavigationRef.current = { screen: "EditTask", params: { taskId } };
+              // Also try retrying a few times
+              let retryCount = 0;
+              const retryInterval = setInterval(() => {
+                retryCount++;
+                if (navigationRef.isReady()) {
+                  console.log("[App] Navigation ready on retry, executing navigate...");
+                  // Check if EditTask is on stack and go back first if needed
+                  const state = navigationRef.getState();
+                  const editTaskIndex = state?.routes.findIndex(r => r.name === "EditTask");
+                  
+                  if (editTaskIndex !== undefined && editTaskIndex >= 0) {
+                    navigationRef.goBack();
+                    setTimeout(() => {
+                      navigationRef.navigate("EditTask", { taskId });
+                    }, 100);
+                  } else {
+                    navigationRef.navigate("EditTask", { taskId });
+                  }
+                  console.log("[App] ✓ Navigation command sent successfully");
+                  clearInterval(retryInterval);
+                  pendingNavigationRef.current = null;
+                } else if (retryCount >= 20) {
+                  console.warn("[App] ❌ Navigation not ready after 20 retries, will execute when ready");
+                  clearInterval(retryInterval);
+                }
+              }, 100);
+            }
+          } catch (error) {
+            console.error("[App] ❌ Error during navigation:", error);
+          }
+        } else {
+          console.warn("[App] ❌ editTask deep link received but taskId parameter is missing");
+          console.warn("[App] Full URL:", url);
+          console.warn("[App] Regex match:", taskIdMatch);
         }
       } else if (url.includes("addTask")) {
         // Parse query parameters from deep link manually (React Native doesn't have URL.searchParams)
@@ -118,18 +234,28 @@ function NavigationInner() {
       }
     };
 
-    // Handle initial URL if app was opened via deep link
-    Linking.getInitialURL().then((url) => {
-      if (url) {
-        console.log("[App] Initial URL:", url);
-        // Wait a bit for navigation to be ready
-        setTimeout(() => handleDeepLink(url), 500);
-      }
-    });
+    // Handle initial URL only once on app startup (check ref to prevent multiple calls)
+    if (!initialUrlProcessedRef.current) {
+      initialUrlProcessedRef.current = true; // Set immediately to prevent race conditions
+      Linking.getInitialURL().then((url) => {
+        if (url && !url.includes("expo-development-client") && url.includes("com.magicmarinac.tasks://")) {
+          console.log("[App] ========== Initial URL Detected (App Startup) ==========");
+          console.log("[App] Initial URL:", url);
+          // Wait a bit for navigation to be ready
+          setTimeout(() => handleDeepLink(url), 500);
+        } else {
+          console.log("[App] Initial URL is Expo dev client or not a deep link, ignoring");
+        }
+      }).catch((error) => {
+        console.error("[App] Error getting initial URL:", error);
+      });
+    }
 
     // Listen for deep links while app is running
     const subscription = Linking.addEventListener("url", (event) => {
-      console.log("[App] Deep link event:", event.url);
+      console.log("[App] ========== Deep Link Event Received ==========");
+      console.log("[App] Event URL:", event.url);
+      console.log("[App] Event type:", event.type);
       handleDeepLink(event.url);
     });
 

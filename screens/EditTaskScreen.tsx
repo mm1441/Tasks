@@ -22,11 +22,27 @@ type EditTaskScreenProps = {
 };
 
 export default function EditTaskScreen({ navigation, route }: EditTaskScreenProps) {
+  console.log("[EditTaskScreen] ========== Screen Rendered ==========");
+  console.log("[EditTaskScreen] Route params:", route.params);
+  console.log("[EditTaskScreen] TaskId from route:", route.params.taskId);
+  
   const { tasks, taskLists = [], updateTask } = useTasks();
   const { theme } = useTheme();
   const styles = makeStyles(theme);
   const taskId = route.params.taskId;
+  
+  console.log("[EditTaskScreen] TaskId variable:", taskId);
+  console.log("[EditTaskScreen] Total tasks available:", tasks.length);
+  
   const task = tasks.find((t) => t.id === taskId);
+  
+  console.log("[EditTaskScreen] Task found:", task ? "YES" : "NO");
+  if (task) {
+    console.log("[EditTaskScreen] Task title:", task.title);
+  } else {
+    console.warn("[EditTaskScreen] ⚠️ Task not found for taskId:", taskId);
+    console.warn("[EditTaskScreen] Available task IDs:", tasks.map(t => t.id));
+  }
 
   const [title, setTitle] = useState(task?.title || "");
   const [description, setDescription] = useState(task?.description || "");
@@ -42,15 +58,29 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
   const [isCompleted, setIsCompleted] = useState<boolean>(!!task?.isCompleted);
   const [showTaskListMenu, setShowTaskListMenu] = useState(false);
 
+  // Update state when taskId changes (when navigating to different task)
+  // This is the primary effect that handles param changes
   useEffect(() => {
-    if (task) {
-      setTitle(task.title);
-      setDescription(task.description || "");
-      setDueDate(task.dueDate || undefined);
-      setIsCompleted(!!task.isCompleted);
-      setSelectedTaskListId(task.tasklistId || (taskLists.length > 0 ? taskLists[0].id : undefined));
+    const currentTask = tasks.find((t) => t.id === taskId);
+    console.log("[EditTaskScreen] useEffect - taskId or tasks changed");
+    console.log("[EditTaskScreen] Current taskId from route:", taskId);
+    console.log("[EditTaskScreen] Found task:", currentTask ? currentTask.title : "NOT FOUND");
+    
+    if (currentTask) {
+      console.log("[EditTaskScreen] Updating state with task:", currentTask.title);
+      setTitle(currentTask.title);
+      setDescription(currentTask.description || "");
+      setDueDate(currentTask.dueDate || undefined);
+      setIsCompleted(!!currentTask.isCompleted);
+      setSelectedTaskListId(currentTask.tasklistId || (taskLists.length > 0 ? taskLists[0].id : undefined));
+    } else {
+      console.warn("[EditTaskScreen] Task not found, clearing state");
+      setTitle("");
+      setDescription("");
+      setDueDate(undefined);
+      setIsCompleted(false);
     }
-  }, [task, taskLists]);
+  }, [taskId, tasks, taskLists]);
 
   // If taskLists load after mount and no selection is set, default to first list
   useEffect(() => {
