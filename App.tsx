@@ -19,7 +19,7 @@ import { Linking } from "react-native";
 export type RootStackParamList = {
   Root: undefined;
   Home: undefined;
-  AddTask: { taskListId?: string };
+  AddTask: { taskListId?: string; title?: string; description?: string; dueDate?: string; autoSave?: boolean };
   EditTask: { taskId: string };
   TaskList: undefined;
 };
@@ -89,8 +89,32 @@ function NavigationInner() {
           navigationRef.navigate("EditTask", { taskId });
         }
       } else if (url.includes("addTask")) {
-        console.log("[App] Navigating to AddTask");
-        navigationRef.navigate("AddTask", {});
+        // Parse query parameters from deep link manually (React Native doesn't have URL.searchParams)
+        const parseQueryParam = (url: string, param: string): string | null => {
+          const regex = new RegExp(`[?&]${param}=([^&]*)`);
+          const match = url.match(regex);
+          return match ? decodeURIComponent(match[1]) : null;
+        };
+        
+        const title = parseQueryParam(url, "title");
+        const description = parseQueryParam(url, "description") || undefined;
+        const dueDate = parseQueryParam(url, "dueDate") || undefined;
+        const tasklistId = parseQueryParam(url, "tasklistId") || undefined;
+        
+        console.log("[App] Navigating to AddTask with params:", { title, description, dueDate, tasklistId });
+        
+        // If title is provided, this is from widget - auto-save
+        if (title) {
+          navigationRef.navigate("AddTask", { 
+            title, 
+            description, 
+            dueDate, 
+            taskListId: tasklistId,
+            autoSave: true 
+          });
+        } else {
+          navigationRef.navigate("AddTask", { taskListId: tasklistId });
+        }
       }
     };
 

@@ -39,7 +39,6 @@ const TASKS_STORAGE_KEY = "@tasks";
 const TASKLISTS_STORAGE_KEY = "@tasklists";
 const CURRENT_TASKLIST_STORAGE_KEY = "@currentTaskList";
 const PREFS_NAME = "tasks_widget_prefs"
- const TASKS_KEY = "tasks"
 
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -132,15 +131,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const filteredTasks = tasks.filter(t => 
-          t.tasklistId === currentTaskListId && 
-          !t.isDeleted
-        );
-        const tasksData = filteredTasks.map(t => ({ 
+        // Store ALL non-deleted tasks (not just current list) so widget can filter by currentTaskListId
+        // This prevents overwriting tasks when currentTaskListId changes
+        const allNonDeletedTasks = tasks.filter(t => !t.isDeleted);
+        const tasksData = allNonDeletedTasks.map(t => ({ 
           id: t.id, 
           title: t.title, 
           dueDate: t.dueDate, 
-          isCompleted: t.isCompleted
+          isCompleted: t.isCompleted,
+          tasklistId: t.tasklistId  // Include tasklistId so TaskRemoteViewsFactory can filter
         }));
 
         const taskListsData = taskLists.map(tl => ({
@@ -198,6 +197,68 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       let loadedTasks: Task[] = storedTasks ? JSON.parse(storedTasks) : [];
       let loadedTaskLists: TaskList[] = storedTaskLists ? JSON.parse(storedTaskLists) : [];
       let restoredCurrentListId: string | null = storedCurrentTaskListId ?? null;
+
+      // Sync tasks and currentTaskListId from widget (SharedPreferences) on Android
+      if (Platform.OS === "android" && WidgetStorage && WidgetStorage.getTasks) {
+        try {
+          // Sync tasks
+          const widgetTasksJson: string = await WidgetStorage.getTasks();
+          const widgetTasks: Array<{ id: string; title: string; description?: string; dueDate?: string; isCompleted: boolean; tasklistId: string }> = JSON.parse(widgetTasksJson);
+          
+          // Merge widget tasks into loaded tasks
+          // For each widget task, check if it exists in loadedTasks by ID
+          // If not, add it with default values for missing fields
+          widgetTasks.forEach(widgetTask => {
+            const existingIndex = loadedTasks.findIndex(t => t.id === widgetTask.id);
+            if (existingIndex >= 0) {
+              // Update existing task (preserve fields not in widget format)
+              const existing = loadedTasks[existingIndex];
+              loadedTasks[existingIndex] = {
+                ...existing,
+                title: widgetTask.title,
+                description: widgetTask.description || existing.description,
+                dueDate: widgetTask.dueDate || existing.dueDate,
+                isCompleted: widgetTask.isCompleted,
+                tasklistId: widgetTask.tasklistId,
+                lastModified: new Date().toISOString()
+              };
+            } else {
+              // Add new task from widget
+              const now = new Date().toISOString();
+              loadedTasks.push({
+                id: widgetTask.id,
+                title: widgetTask.title,
+                description: widgetTask.description || undefined,
+                dueDate: widgetTask.dueDate || undefined,
+                isCompleted: widgetTask.isCompleted,
+                tasklistId: widgetTask.tasklistId,
+                createdAt: now,
+                lastModified: now,
+                isDeleted: false,
+                notificationId: null,
+                googleId: undefined
+              });
+            }
+          });
+          
+          // Sync currentTaskListId from widget if it exists and is valid
+          if (WidgetStorage.getCurrentTaskListId) {
+            try {
+              const widgetCurrentTaskListId: string = await WidgetStorage.getCurrentTaskListId();
+              if (widgetCurrentTaskListId && loadedTaskLists.some(tl => tl.id === widgetCurrentTaskListId)) {
+                restoredCurrentListId = widgetCurrentTaskListId;
+                console.debug("[TaskProvider] Synced currentTaskListId from widget:", widgetCurrentTaskListId);
+              }
+            } catch (e) {
+              console.warn("[TaskProvider] Failed to sync currentTaskListId from widget:", e);
+            }
+          }
+          
+          console.debug("[TaskProvider] Synced", widgetTasks.length, "tasks from widget");
+        } catch (e) {
+          console.warn("[TaskProvider] Failed to sync tasks from widget:", e);
+        }
+      }
 
       if (!loadedTaskLists || loadedTaskLists.length === 0) {
         const now = new Date().toISOString();

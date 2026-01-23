@@ -208,12 +208,15 @@ class WidgetConfigActivity : Activity() {
                     val resultValue = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                     setResult(RESULT_OK, resultValue)
                     
-                    // Update widget
+                    // Update widget immediately
                     val appWidgetManager = AppWidgetManager.getInstance(this)
                     val widgetProvider = TasksWidgetProvider()
                     widgetProvider.onUpdate(this, appWidgetManager, intArrayOf(appWidgetId))
                     
-                    Log.d(TAG, "Widget configuration saved, finishing activity")
+                    // Force data refresh to show tasks for new list
+                    appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.list_view)
+                    
+                    Log.d(TAG, "Widget configuration saved, widget updated and data refreshed")
                     finish()
                 }
             }

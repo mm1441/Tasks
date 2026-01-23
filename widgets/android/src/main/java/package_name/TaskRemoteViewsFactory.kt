@@ -13,6 +13,7 @@ import com.google.gson.reflect.TypeToken
 
 private const val PREFS_NAME = "tasks_widget_prefs"
 private const val TASKS_KEY = "tasks"
+private const val CURRENT_TASKLIST_ID_KEY = "currentTaskListId"
 private const val TAG = "TasksWidget"
 
 class TaskRemoteViewsFactory(
@@ -38,15 +39,23 @@ class TaskRemoteViewsFactory(
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val json = prefs.getString(TASKS_KEY, "[]") ?: "[]"
+            val currentTaskListId = prefs.getString(CURRENT_TASKLIST_ID_KEY, "") ?: ""
             
             Log.d(TAG, "Loading tasks from SharedPreferences")
-            Log.d(TAG, "JSON length: ${json.length}, JSON: $json")
+            Log.d(TAG, "Current task list ID: $currentTaskListId")
+            Log.d(TAG, "JSON length: ${json.length}")
 
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val parsedTasks = gson.fromJson<List<Map<String, Any>>>(json, type)
-            tasks = parsedTasks ?: emptyList()
+            val allTasks = gson.fromJson<List<Map<String, Any>>>(json, type) ?: emptyList()
             
-            Log.d(TAG, "Loaded ${tasks.size} tasks")
+            // Filter tasks by current task list ID
+            // Note: isDeleted tasks are already filtered out before being stored in SharedPreferences
+            tasks = allTasks.filter { task ->
+                val taskListId = task["tasklistId"] as? String ?: ""
+                taskListId == currentTaskListId
+            }
+            
+            Log.d(TAG, "Loaded ${allTasks.size} total tasks, ${tasks.size} tasks for current list")
             tasks.forEachIndexed { index, task ->
                 Log.d(TAG, "Task $index: ${task["title"]}")
             }

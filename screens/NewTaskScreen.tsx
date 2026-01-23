@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -22,12 +22,27 @@ export default function AddTaskScreen({ route, navigation }: AddTaskProps) {
   const { addTask } = useTasks();
   const { theme } = useTheme();
   const styles = makeStyles(theme);
-  const { taskListId } = route.params ?? {};
+  const { taskListId, title: initialTitle, description: initialDescription, dueDate: initialDueDate, autoSave } = route.params ?? {};
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [dueDate, setDueDate] = useState("");
+  const [title, setTitle] = useState(initialTitle || "");
+  const [description, setDescription] = useState(initialDescription || "");
+  const [dueDate, setDueDate] = useState(initialDueDate || "");
   const [showPicker, setShowPicker] = useState(false);
+
+  // Auto-save if coming from widget with all required data
+  useEffect(() => {
+    if (autoSave && title && title.trim()) {
+      console.log("[AddTaskScreen] Auto-saving task from widget:", { title, description, dueDate, taskListId });
+      addTask({
+        title: title.trim(),
+        description: description.trim() || undefined,
+        dueDate: dueDate.trim() || undefined,
+        tasklistId: taskListId || undefined
+      });
+      // Navigate back immediately
+      navigation.goBack();
+    }
+  }, [autoSave, title, description, dueDate, taskListId, addTask, navigation]);
 
   const handleSave = () => {
     if (!title.trim()) return;

@@ -38,4 +38,26 @@ class WidgetStorageModule(
     val intent = android.content.Intent("${ctx.packageName}.UPDATE_WIDGET")
     ctx.sendBroadcast(intent)
   }
+
+  @ReactMethod
+  fun getTasks(promise: Promise) {
+    try {
+      val prefs = reactContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+      val tasksJson = prefs.getString("tasks", "[]") ?: "[]"
+      promise.resolve(tasksJson)
+    } catch (e: Exception) {
+      promise.reject("GET_TASKS_ERROR", "Failed to get tasks from SharedPreferences", e)
+    }
+  }
+
+  @ReactMethod
+  fun getCurrentTaskListId(promise: Promise) {
+    try {
+      val prefs = reactContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+      val currentTaskListId = prefs.getString("currentTaskListId", "") ?: ""
+      promise.resolve(currentTaskListId)
+    } catch (e: Exception) {
+      promise.reject("GET_CURRENT_TASKLIST_ID_ERROR", "Failed to get currentTaskListId from SharedPreferences", e)
+    }
+  }
 }

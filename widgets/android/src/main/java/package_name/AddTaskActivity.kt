@@ -15,6 +15,7 @@ import android.util.Log
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -184,11 +185,13 @@ class AddTaskActivity : Activity() {
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val currentTaskListId = prefs.getString(CURRENT_TASKLIST_ID_KEY, "") ?: ""
             
+            // Load existing tasks
             val tasksJson = prefs.getString(TASKS_KEY, "[]") ?: "[]"
             val gson = Gson()
             val type = object : TypeToken<MutableList<MutableMap<String, Any>>>() {}.type
             val tasks = gson.fromJson<MutableList<MutableMap<String, Any>>>(tasksJson, type) ?: mutableListOf()
             
+            // Create new task
             val newTask = mutableMapOf<String, Any>(
                 "id" to System.currentTimeMillis().toString(),
                 "title" to title,
@@ -198,16 +201,20 @@ class AddTaskActivity : Activity() {
                 "tasklistId" to currentTaskListId
             )
             
+            // Add task to list
             tasks.add(newTask)
             
+            // Save back to SharedPreferences
             val updatedJson = gson.toJson(tasks)
             prefs.edit().putString(TASKS_KEY, updatedJson).apply()
             
-            // Notify widget to update
+            Log.d(TAG, "Task saved to SharedPreferences: $title")
+            
+            // Update widget without opening app
             val updateIntent = Intent("${packageName}.UPDATE_WIDGET")
             sendBroadcast(updateIntent)
             
-            Log.d(TAG, "Task saved: $title")
+            Log.d(TAG, "Widget update broadcast sent")
         } catch (e: Exception) {
             Log.e(TAG, "Error saving task", e)
         }

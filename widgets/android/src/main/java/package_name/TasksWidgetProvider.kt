@@ -69,7 +69,7 @@ class TasksWidgetProvider : AppWidgetProvider() {
         // Set click intent for task list dropdown container (open config activity)
         val dropdownIntent = Intent(context, WidgetConfigActivity::class.java).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or Intent.FLAG_ACTIVITY_NO_HISTORY
         }
         val dropdownPendingIntent = PendingIntent.getActivity(
             context,
@@ -81,7 +81,7 @@ class TasksWidgetProvider : AppWidgetProvider() {
         
         // Set click intent for + button (open AddTaskActivity)
         val addTaskIntent = Intent(context, AddTaskActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or Intent.FLAG_ACTIVITY_NO_HISTORY
         }
         val addTaskPendingIntent = PendingIntent.getActivity(
             context,
