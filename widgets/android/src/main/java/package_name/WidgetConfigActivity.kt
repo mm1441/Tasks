@@ -19,6 +19,7 @@ import com.google.gson.reflect.TypeToken
 private const val PREFS_NAME = "tasks_widget_prefs"
 private const val TASKLISTS_KEY = "taskLists"
 private const val CURRENT_TASKLIST_ID_KEY = "currentTaskListId"
+private const val SHOW_COMPLETED_KEY = "showCompleted"
 private const val TAG = "WidgetConfig"
 
 class WidgetConfigActivity : Activity() {
@@ -180,10 +181,11 @@ class WidgetConfigActivity : Activity() {
             )
         })
         
-        // Show completed toggle (placeholder - not implemented)
+        // Show completed toggle
+        val showCompleted = prefs.getBoolean(SHOW_COMPLETED_KEY, false)
         val showCompletedCheckbox = CheckBox(this).apply {
             text = "Show Completed Tasks"
-            isChecked = false
+            isChecked = showCompleted
         }
         dialogView.addView(showCompletedCheckbox)
         
@@ -201,8 +203,13 @@ class WidgetConfigActivity : Activity() {
                     
                     Log.d(TAG, "Saving selected list ID: $selectedListId")
                     
-                    // Save selected list
-                    prefs.edit().putString(CURRENT_TASKLIST_ID_KEY, selectedListId).apply()
+                    // Save selected list and show completed setting
+                    prefs.edit()
+                        .putString(CURRENT_TASKLIST_ID_KEY, selectedListId)
+                        .putBoolean(SHOW_COMPLETED_KEY, showCompletedCheckbox.isChecked)
+                        .apply()
+                    
+                    Log.d(TAG, "Show completed: ${showCompletedCheckbox.isChecked}")
                     
                     // Set result first (required for widget to be created)
                     val resultValue = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)

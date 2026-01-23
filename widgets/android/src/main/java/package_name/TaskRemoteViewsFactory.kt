@@ -14,6 +14,7 @@ import com.google.gson.reflect.TypeToken
 private const val PREFS_NAME = "tasks_widget_prefs"
 private const val TASKS_KEY = "tasks"
 private const val CURRENT_TASKLIST_ID_KEY = "currentTaskListId"
+private const val SHOW_COMPLETED_KEY = "showCompleted"
 private const val TAG = "TasksWidget"
 
 class TaskRemoteViewsFactory(
@@ -40,22 +41,27 @@ class TaskRemoteViewsFactory(
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val json = prefs.getString(TASKS_KEY, "[]") ?: "[]"
             val currentTaskListId = prefs.getString(CURRENT_TASKLIST_ID_KEY, "") ?: ""
+            val showCompleted = prefs.getBoolean(SHOW_COMPLETED_KEY, false)
             
             Log.d(TAG, "Loading tasks from SharedPreferences")
             Log.d(TAG, "Current task list ID: $currentTaskListId")
+            Log.d(TAG, "Show completed: $showCompleted")
             Log.d(TAG, "JSON length: ${json.length}")
 
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
             val allTasks = gson.fromJson<List<Map<String, Any>>>(json, type) ?: emptyList()
             
-            // Filter tasks by current task list ID
+            // Filter tasks by current task list ID and completed status
             // Note: isDeleted tasks are already filtered out before being stored in SharedPreferences
             tasks = allTasks.filter { task ->
                 val taskListId = task["tasklistId"] as? String ?: ""
-                taskListId == currentTaskListId
+                val isCompleted = task["isCompleted"] as? Boolean ?: false
+                val matchesList = taskListId == currentTaskListId
+                val matchesCompleted = showCompleted || !isCompleted
+                matchesList && matchesCompleted
             }
             
-            Log.d(TAG, "Loaded ${allTasks.size} total tasks, ${tasks.size} tasks for current list")
+            Log.d(TAG, "Loaded ${allTasks.size} total tasks, ${tasks.size} tasks for current list (showCompleted=$showCompleted)")
             tasks.forEachIndexed { index, task ->
                 Log.d(TAG, "Task $index: ${task["title"]}")
             }
@@ -108,17 +114,18 @@ class TaskRemoteViewsFactory(
             
             // Set click intent for checkbox (toggle completion)
             // Use individual PendingIntent with unique request code per widget: appWidgetId * 10000 + position
-            val checkboxIntent = Intent().apply {
+            // Must use explicit component for broadcast to be received
+            val checkboxIntent = Intent(context, TasksWidgetProvider::class.java).apply {
                 action = "${context.packageName}.TOGGLE_TASK"
                 putExtra("taskId", taskId)
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                data = Uri.parse("widget://task/checkbox/$position")
+                data = Uri.parse("widget://task/checkbox/$taskId")
             }
             val checkboxPendingIntent = PendingIntent.getBroadcast(
                 context,
                 appWidgetId * 10000 + position, // Unique per widget and position
                 checkboxIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
             )
             rv.setOnClickPendingIntent(R.id.task_checkbox, checkboxPendingIntent)
             

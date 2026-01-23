@@ -50,6 +50,8 @@ class TasksWidgetProvider : AppWidgetProvider() {
         val taskListsJson = prefs.getString(TASKLISTS_KEY, "[]") ?: "[]"
         val currentTaskListId = prefs.getString(CURRENT_TASKLIST_ID_KEY, "") ?: ""
         
+        Log.d(TAG, "updateAppWidget: currentTaskListId=$currentTaskListId, taskListsJson length=${taskListsJson.length}")
+        
         val gson = Gson()
         val type = object : TypeToken<List<Map<String, Any>>>() {}.type
         val taskLists = try {
@@ -95,10 +97,12 @@ class TasksWidgetProvider : AppWidgetProvider() {
         val intent = Intent(context, TaskListService::class.java)
         intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         intent.data = Uri.parse(intent.toUri(Intent.URI_INTENT_SCHEME))
+        Log.d(TAG, "Setting RemoteAdapter with intent: ${intent.component}")
         views.setRemoteAdapter(R.id.list_view, intent)
         views.setEmptyView(R.id.list_view, R.id.empty_view)
         
         // Set template for list item clicks (for task item clicks) - one per widget
+        // Must use FLAG_MUTABLE for fillInIntent to work properly
         val templateIntent = Intent(Intent.ACTION_VIEW).apply {
             data = Uri.parse("com.magicmarinac.tasks://editTask")
             setPackage(context.packageName)
@@ -107,7 +111,7 @@ class TasksWidgetProvider : AppWidgetProvider() {
             context,
             appWidgetId + 30000, // One request code per widget
             templateIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
         views.setPendingIntentTemplate(R.id.list_view, templatePendingIntent)
         
@@ -128,7 +132,11 @@ class TasksWidgetProvider : AppWidgetProvider() {
                 Log.d(TAG, "Custom UPDATE_WIDGET action received")
                 val appWidgetManager = AppWidgetManager.getInstance(context)
                 val appWidgetIds = appWidgetManager.getAppWidgetIds(ComponentName(context, TasksWidgetProvider::class.java))
+                // First update the widget UI
                 onUpdate(context, appWidgetManager, appWidgetIds)
+                // Then notify data changed to reload tasks from SharedPreferences
+                appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetIds, R.id.list_view)
+                Log.d(TAG, "Notified ${appWidgetIds.size} widgets of data change")
             }
             "${context.packageName}.TOGGLE_TASK" -> {
                 Log.d(TAG, "TOGGLE_TASK action received")
@@ -163,7 +171,8 @@ class TasksWidgetProvider : AppWidgetProvider() {
                 tasks[taskIndex]["isCompleted"] = !currentCompleted
                 
                 val updatedJson = gson.toJson(tasks)
-                prefs.edit().putString("tasks", updatedJson).apply()
+                // Use commit() for synchronous write to ensure data is persisted before widget update
+                prefs.edit().putString("tasks", updatedJson).commit()
                 
                 // Notify the app to update the task
                 val updateIntent = Intent("${context.packageName}.WIDGET_TASK_UPDATED").apply {

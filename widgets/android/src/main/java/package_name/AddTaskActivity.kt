@@ -1,6 +1,9 @@
 package package_name
 
 import android.app.Activity
+import android.app.DatePickerDialog
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -11,6 +14,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.util.Log
 import android.content.Context
 import android.content.Intent
@@ -18,6 +22,9 @@ import android.content.SharedPreferences
 import android.net.Uri
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 private const val PREFS_NAME = "tasks_widget_prefs"
 private const val TASKS_KEY = "tasks"
@@ -25,6 +32,7 @@ private const val CURRENT_TASKLIST_ID_KEY = "currentTaskListId"
 private const val TAG = "AddTaskActivity"
 
 class AddTaskActivity : Activity() {
+    private var selectedDueDate: String = ""
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,20 +87,21 @@ class AddTaskActivity : Activity() {
         }
         rootLayout.addView(descriptionInput)
         
-        // Due date input (initially hidden)
-        val dueDateInput = EditText(this).apply {
-            hint = "Due date (optional)"
+        // Due date display (initially hidden)
+        val dueDateLabel = TextView(this).apply {
+            text = ""
             visibility = View.GONE
-            isFocusable = false
-            isClickable = true
+            textSize = 14f
+            setTextColor(android.graphics.Color.parseColor("#007AFF"))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 bottomMargin = 16
             }
+            setPadding(0, 8, 0, 8)
         }
-        rootLayout.addView(dueDateInput)
+        rootLayout.addView(dueDateLabel)
         
         // Action buttons row
         val buttonRow = LinearLayout(this).apply {
@@ -128,7 +137,7 @@ class AddTaskActivity : Activity() {
         }
         buttonRow.addView(descriptionButton)
         
-        // Due date icon button
+        // Due date icon button - opens DatePickerDialog immediately
         val dueDateButton = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_my_calendar)
             background = null
@@ -138,12 +147,7 @@ class AddTaskActivity : Activity() {
                 48
             )
             setOnClickListener {
-                if (dueDateInput.visibility == View.GONE) {
-                    dueDateInput.visibility = View.VISIBLE
-                    // TODO: Open date picker
-                } else {
-                    dueDateInput.visibility = View.GONE
-                }
+                showDatePicker(dueDateLabel)
             }
         }
         buttonRow.addView(dueDateButton)
@@ -160,7 +164,7 @@ class AddTaskActivity : Activity() {
             setOnClickListener {
                 val title = titleInput.text.toString().trim()
                 if (title.isNotEmpty()) {
-                    saveTask(title, descriptionInput.text.toString(), dueDateInput.text.toString())
+                    saveTask(title, descriptionInput.text.toString(), selectedDueDate)
                     finish()
                 }
             }
@@ -180,6 +184,36 @@ class AddTaskActivity : Activity() {
         }
     }
     
+    private fun showDatePicker(dueDateLabel: TextView) {
+        val calendar = Calendar.getInstance()
+        
+        val datePickerDialog = DatePickerDialog(
+            this,
+            { _, year, month, dayOfMonth ->
+                // Format date as ISO string for storage
+                val selectedCalendar = Calendar.getInstance()
+                selectedCalendar.set(year, month, dayOfMonth, 23, 59, 59)
+                
+                val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+                selectedDueDate = isoFormat.format(selectedCalendar.time)
+                
+                // Display formatted date
+                val displayFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+                dueDateLabel.text = "Due: ${displayFormat.format(selectedCalendar.time)}"
+                dueDateLabel.visibility = View.VISIBLE
+                
+                Log.d(TAG, "Selected due date: $selectedDueDate")
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        )
+        
+        // Set minimum date to today
+        datePickerDialog.datePicker.minDate = System.currentTimeMillis() - 1000
+        datePickerDialog.show()
+    }
+    
     private fun saveTask(title: String, description: String, dueDate: String) {
         try {
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -191,30 +225,52 @@ class AddTaskActivity : Activity() {
             val type = object : TypeToken<MutableList<MutableMap<String, Any>>>() {}.type
             val tasks = gson.fromJson<MutableList<MutableMap<String, Any>>>(tasksJson, type) ?: mutableListOf()
             
-            // Create new task
+            // Create new task with all required fields
+            val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).format(java.util.Date())
             val newTask = mutableMapOf<String, Any>(
-                "id" to System.currentTimeMillis().toString(),
+                "id" to java.util.UUID.randomUUID().toString(),
                 "title" to title,
-                "description" to description,
-                "dueDate" to dueDate,
                 "isCompleted" to false,
-                "tasklistId" to currentTaskListId
+                "tasklistId" to currentTaskListId,
+                "createdAt" to now,
+                "lastModified" to now,
+                "isDeleted" to false
             )
+            if (description.isNotEmpty()) {
+                newTask["description"] = description
+            }
+            if (dueDate.isNotEmpty()) {
+                newTask["dueDate"] = dueDate
+            }
             
             // Add task to list
             tasks.add(newTask)
             
-            // Save back to SharedPreferences
+            // Save back to SharedPreferences - use commit() for synchronous write to ensure data is persisted
             val updatedJson = gson.toJson(tasks)
-            prefs.edit().putString(TASKS_KEY, updatedJson).apply()
+            val saved = prefs.edit().putString(TASKS_KEY, updatedJson).commit()
             
-            Log.d(TAG, "Task saved to SharedPreferences: $title")
+            Log.d(TAG, "Task saved to SharedPreferences: $title (saved=$saved)")
             
-            // Update widget without opening app
-            val updateIntent = Intent("${packageName}.UPDATE_WIDGET")
-            sendBroadcast(updateIntent)
+            // Update widget immediately using the same approach as WidgetConfigActivity
+            val appWidgetManager = AppWidgetManager.getInstance(this)
+            val componentName = ComponentName(this, TasksWidgetProvider::class.java)
+            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
             
-            Log.d(TAG, "Widget update broadcast sent")
+            if (appWidgetIds.isNotEmpty()) {
+                Log.d(TAG, "Updating ${appWidgetIds.size} widget(s) directly")
+                val widgetProvider = TasksWidgetProvider()
+                // Update widget UI first
+                widgetProvider.onUpdate(this, appWidgetManager, appWidgetIds)
+                // Then force data refresh to reload tasks from SharedPreferences
+                appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetIds, R.id.list_view)
+                Log.d(TAG, "Widget(s) updated and data refreshed")
+            } else {
+                Log.d(TAG, "No widgets found, sending broadcast as fallback")
+                // Fallback to broadcast if no widgets found
+                val updateIntent = Intent("${packageName}.UPDATE_WIDGET")
+                sendBroadcast(updateIntent)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error saving task", e)
         }
