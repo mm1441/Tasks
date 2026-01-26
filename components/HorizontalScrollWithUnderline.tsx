@@ -10,6 +10,7 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { TaskList } from '../types/TaskList';
 import { useTheme } from '../context/ThemeContext';
 
@@ -23,9 +24,10 @@ interface Props {
   taskLists: TaskList[];
   selectedIndex?: number;
   onActiveChange?: (index: number) => void;
+  onAddPress?: () => void;
 }
 
-const HorizontalScrollWithUnderline: FC<Props> = ({taskLists, selectedIndex, onActiveChange}) => {
+const HorizontalScrollWithUnderline: FC<Props> = ({taskLists, selectedIndex, onActiveChange, onAddPress}) => {
   const { theme } = useTheme();
   const styles = makeStyles(theme);
   const listRef = useRef<FlatList>(null);
@@ -148,6 +150,29 @@ const HorizontalScrollWithUnderline: FC<Props> = ({taskLists, selectedIndex, onA
     );
   };
 
+  const renderAddButton = () => {
+    if (!onAddPress) return null;
+    return (
+      <View style={{ width: ITEM_WIDTH, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+        <TouchableOpacity
+          style={{
+            width: '100%',
+            height: '100%',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+          onPress={onAddPress}
+          activeOpacity={0.7}
+        >
+          <View style={styles.addButton}>
+            <Ionicons name="add" size={20} color={theme.primary} />
+            <Text style={[styles.text, styles.addButtonText]}>New List</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   // Called when FlatList container gets its layout — flag list as ready and attempt a scroll to selectedIndex
   const handleListLayout = () => {
     if (!listReady) {
@@ -184,6 +209,7 @@ const HorizontalScrollWithUnderline: FC<Props> = ({taskLists, selectedIndex, onA
         showsHorizontalScrollIndicator={false}
         keyExtractor={(_, i) => i.toString()}
         renderItem={renderItem}
+        ListFooterComponent={renderAddButton}
         snapToInterval={SNAP_INTERVAL}
         snapToAlignment="start"
         decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.98}
@@ -225,6 +251,16 @@ const makeStyles = (theme: any) =>
     underlineActive: {
       width: ITEM_WIDTH,
       backgroundColor: theme.primary,
+    },
+    addButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+    },
+    addButtonText: {
+      color: theme.primary,
+      fontSize: 14,
     },
   });
 

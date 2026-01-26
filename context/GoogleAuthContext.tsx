@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { GoogleAuthService, GoogleAuthTokens } from '../services/GoogleAuth';
+import { GoogleAuthService, GoogleAuthTokens, GoogleUserInfo } from '../services/GoogleAuth';
 
 interface GoogleAuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
+  userInfo: GoogleUserInfo | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
@@ -14,6 +15,7 @@ const GoogleAuthContext = createContext<GoogleAuthContextType | undefined>(undef
 export function GoogleAuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [userInfo, setUserInfo] = useState<GoogleUserInfo | null>(null);
   const authService = GoogleAuthService.getInstance();
 
   useEffect(() => {
@@ -24,10 +26,31 @@ export function GoogleAuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       const tokens = await authService.loadStoredTokens();
-      setIsAuthenticated(tokens !== null);
+      const authenticated = tokens !== null;
+      setIsAuthenticated(authenticated);
+      
+      if (authenticated) {
+        // Load stored user info
+        const storedUserInfo = await authService.loadStoredUserInfo();
+        if (storedUserInfo) {
+          setUserInfo(storedUserInfo);
+        } else {
+          // If we have tokens but no user info, fetch it
+          const accessToken = await authService.getAccessToken();
+          if (accessToken) {
+            const fetchedUserInfo = await authService.fetchUserInfo(accessToken);
+            if (fetchedUserInfo) {
+              setUserInfo(fetchedUserInfo);
+            }
+          }
+        }
+      } else {
+        setUserInfo(null);
+      }
     } catch (error) {
       console.error('Failed to load auth state:', error);
       setIsAuthenticated(false);
+      setUserInfo(null);
     } finally {
       setIsLoading(false);
     }
@@ -37,6 +60,9 @@ export function GoogleAuthProvider({ children }: { children: ReactNode }) {
     try {
       const tokens = await authService.signIn();
       setIsAuthenticated(true);
+      // User info is fetched automatically in signIn, so get it from the service
+      const userInfo = authService.getUserInfo();
+      setUserInfo(userInfo);
     } catch (error) {
       console.error('Sign in failed:', error);
       throw error;
@@ -47,6 +73,7 @@ export function GoogleAuthProvider({ children }: { children: ReactNode }) {
     try {
       await authService.signOut();
       setIsAuthenticated(false);
+      setUserInfo(null);
     } catch (error) {
       console.error('Sign out failed:', error);
       throw error;
@@ -67,6 +94,7 @@ export function GoogleAuthProvider({ children }: { children: ReactNode }) {
       value={{
         isAuthenticated,
         isLoading,
+        userInfo,
         signIn,
         signOut,
         getAccessToken,

@@ -9,6 +9,7 @@ const GOOGLE_REDIRECT_URI = AuthSession.makeRedirectUri({
   scheme: 'com.magicmarinac.tasks',
 });
 const TOKEN_STORAGE_KEY = '@google_auth_tokens';
+const USER_INFO_STORAGE_KEY = '@google_user_info';
 const DISCOVERY = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
@@ -21,9 +22,19 @@ export interface GoogleAuthTokens {
   expiresAt?: number;
 }
 
+export interface GoogleUserInfo {
+  id: string;
+  email: string;
+  name: string;
+  picture: string;
+  given_name?: string;
+  family_name?: string;
+}
+
 export class GoogleAuthService {
   private static instance: GoogleAuthService;
   private tokens: GoogleAuthTokens | null = null;
+  private userInfo: GoogleUserInfo | null = null;
 
   private constructor() { }
 
@@ -69,6 +80,8 @@ export class GoogleAuthService {
         scopes: [
           'https://www.googleapis.com/auth/tasks',
           'https://www.googleapis.com/auth/tasks.readonly',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/userinfo.email',
         ],
         redirectUri: GOOGLE_REDIRECT_URI,
         responseType: AuthSession.ResponseType.Code,
@@ -104,6 +117,10 @@ export class GoogleAuthService {
 
         await this.saveTokens(tokens);
         this.tokens = tokens;
+        
+        // Fetch user info after successful authentication
+        await this.fetchUserInfo(tokens.accessToken);
+        
         return tokens;
       } else {
         throw new Error('Authentication cancelled or failed');
@@ -182,6 +199,45 @@ export class GoogleAuthService {
     return this.tokens.accessToken;
   }
 
+  async fetchUserInfo(accessToken: string): Promise<GoogleUserInfo | null> {
+    try {
+      const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch user info');
+      }
+
+      const userInfo: GoogleUserInfo = await response.json();
+      await this.saveUserInfo(userInfo);
+      this.userInfo = userInfo;
+      return userInfo;
+    } catch (error) {
+      console.error('Failed to fetch user info:', error);
+      return null;
+    }
+  }
+
+  async loadStoredUserInfo(): Promise<GoogleUserInfo | null> {
+    try {
+      const stored = await AsyncStorage.getItem(USER_INFO_STORAGE_KEY);
+      if (stored) {
+        this.userInfo = JSON.parse(stored);
+        return this.userInfo;
+      }
+    } catch (error) {
+      console.error('Failed to load stored user info:', error);
+    }
+    return null;
+  }
+
+  getUserInfo(): GoogleUserInfo | null {
+    return this.userInfo;
+  }
+
   async signOut(): Promise<void> {
     try {
       if (this.tokens?.accessToken) {
@@ -204,7 +260,9 @@ export class GoogleAuthService {
       console.error('Sign out error:', error);
     } finally {
       this.tokens = null;
+      this.userInfo = null;
       await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+      await AsyncStorage.removeItem(USER_INFO_STORAGE_KEY);
     }
   }
 
@@ -218,6 +276,14 @@ export class GoogleAuthService {
     } catch (error) {
       console.error('Failed to save tokens:', error);
       throw error;
+    }
+  }
+
+  private async saveUserInfo(userInfo: GoogleUserInfo): Promise<void> {
+    try {
+      await AsyncStorage.setItem(USER_INFO_STORAGE_KEY, JSON.stringify(userInfo));
+    } catch (error) {
+      console.error('Failed to save user info:', error);
     }
   }
 }

@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBar } from '../components/TopBar';
 import { useTasks } from '../context/TaskContext';
 import { useTheme } from '../context/ThemeContext';
+import NewTaskListModal from '../components/NewTaskListModal';
 
 
 export default function TaskListsScreen({ navigation }) {
@@ -48,17 +49,12 @@ export default function TaskListsScreen({ navigation }) {
   }, [taskLists, tasks]);
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
   const listRef = useRef(null);
 
   const handleAddPress = () => setModalVisible(true);
 
-  const addList = () => {
-    const trimmed = newTitle.trim();
-    if (!trimmed) return; // simple validation
-    addTaskList({ title: trimmed });
-    setNewTitle('');
-    setModalVisible(false);
+  const handleAddList = (title: string) => {
+    addTaskList({ title });
     // scroll to end so the new item is visible (since context appends)
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
   };
@@ -131,16 +127,16 @@ export default function TaskListsScreen({ navigation }) {
         title="Task Lists"
         leftIcon={<Ionicons name="chevron-back" size={26} color={theme.text} />}
         onLeftIconPress={() => (navigation?.goBack ? navigation.goBack() : null)}
-        rightIcon1={<Ionicons name="search" size={24} color={theme.text} />}
-        onRightIcon1Press={() => {
-          // hook up search UI
-          console.log('search pressed');
-        }}
-        rightIcon2={<Ionicons name="filter" size={24} color={theme.text}/>}
-        onRightIcon2Press={() => {
-          // hook up filter UI
-          console.log('filter pressed');
-        }}
+        // rightIcon1={<Ionicons name="search" size={24} color={theme.text} />}
+        // onRightIcon1Press={() => {
+        //   // hook up search UI
+        //   console.log('search pressed');
+        // }}
+        // rightIcon2={<Ionicons name="filter" size={24} color={theme.text}/>}
+        // onRightIcon2Press={() => {
+        //   // hook up filter UI
+        //   console.log('filter pressed');
+        // }}
       />
 
       <View style={styles.container}>
@@ -170,34 +166,11 @@ export default function TaskListsScreen({ navigation }) {
         </TouchableOpacity>
 
         {/* Add modal */}
-        <Modal
-          animationType="slide"
-          transparent visible={modalVisible}
-          onRequestClose={() => setModalVisible(false)}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>New Task List</Text>
-
-              <TextInput
-                placeholder="List title"
-                value={newTitle}
-                onChangeText={setNewTitle}
-                style={styles.input}
-                autoFocus
-              />
-
-              <View style={styles.modalActions}>
-                <Pressable style={styles.modalButton} onPress={() => setModalVisible(false)}>
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </Pressable>
-                <Pressable style={[styles.modalButton, styles.modalPrimary]} onPress={addList}>
-                  <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Add</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        <NewTaskListModal
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          onSubmit={handleAddList}
+        />
 
         {selectedListId && (
           <Modal
@@ -330,34 +303,6 @@ const makeStyles = (theme: any) =>
       }),
     },
 
-    /* modal */
-    modalBackdrop: {
-      flex: 1,
-      backgroundColor: theme.overlay,
-      justifyContent: 'center',
-      padding: 20,
-    },
-    modalCard: {
-      backgroundColor: theme.surface,
-      borderRadius: 12,
-      padding: 16,
-    },
-    modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12, color: theme.text },
-    input: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.border,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      marginBottom: 12,
-      backgroundColor: theme.surface,
-      color: theme.text,
-    },
-    modalActions: { flexDirection: 'row', justifyContent: 'flex-end' },
-    modalButton: { paddingVertical: 8, paddingHorizontal: 12 },
-    modalPrimary: { backgroundColor: theme.primary, borderRadius: 8, marginLeft: 8 },
-    modalButtonText: { color: theme.text, fontWeight: '600' },
-    modalPrimaryText: { color: '#fff' },
     modalOverlay: {
       flex: 1,
       backgroundColor: theme.overlay,

@@ -21,6 +21,8 @@ interface TaskContextType {
   currentTaskListId: string | null;
   syncStatus: SyncStatus;
   syncError: string | null;
+  showDeletedTasks: boolean;
+  setShowDeletedTasks: (value: boolean | ((prev: boolean) => boolean)) => void;
   addTask: (task: Omit<Task, "id" | "createdAt" | "lastModified">) => Promise<void>;
   updateTask: (task: Task) => void;
   deleteTask: (id: string) => void;
@@ -47,6 +49,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [currentTaskListId, setCurrentTaskListId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [showDeletedTasks, setShowDeletedTasks] = useState(false);
 
   const currentTaskList = useMemo(() => taskLists.find(tl => tl.id === currentTaskListId) ?? null, [taskLists, currentTaskListId]);
 
@@ -139,7 +142,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           title: t.title, 
           dueDate: t.dueDate, 
           isCompleted: t.isCompleted,
-          tasklistId: t.tasklistId  // Include tasklistId so TaskRemoteViewsFactory can filter
+          tasklistId: t.tasklistId,  // Include tasklistId so TaskRemoteViewsFactory can filter
+          createdAt: t.createdAt  // Include createdAt for sorting (newest first)
         }));
 
         const taskListsData = taskLists.map(tl => ({
@@ -211,19 +215,23 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           widgetTasks.forEach(widgetTask => {
             const existingIndex = loadedTasks.findIndex(t => t.id === widgetTask.id);
             if (existingIndex >= 0) {
-              // Update existing task (preserve fields not in widget format)
+              // Update existing task (preserve fields not in widget format, especially isDeleted)
               const existing = loadedTasks[existingIndex];
-              loadedTasks[existingIndex] = {
-                ...existing,
-                title: widgetTask.title,
-                description: widgetTask.description || existing.description,
-                dueDate: widgetTask.dueDate || existing.dueDate,
-                isCompleted: widgetTask.isCompleted,
-                tasklistId: widgetTask.tasklistId,
-                lastModified: new Date().toISOString()
-              };
+              // Only update if the task is not deleted locally - widget doesn't have deleted tasks
+              // so if a task exists in loadedTasks with isDeleted: true, don't overwrite it
+              if (!existing.isDeleted) {
+                loadedTasks[existingIndex] = {
+                  ...existing,
+                  title: widgetTask.title,
+                  description: widgetTask.description || existing.description,
+                  dueDate: widgetTask.dueDate || existing.dueDate,
+                  isCompleted: widgetTask.isCompleted,
+                  tasklistId: widgetTask.tasklistId,
+                  lastModified: new Date().toISOString()
+                };
+              }
             } else {
-              // Add new task from widget
+              // Add new task from widget (widget only has non-deleted tasks)
               const now = new Date().toISOString();
               loadedTasks.push({
                 id: widgetTask.id,
@@ -358,7 +366,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       setCurrentTaskList(defaultList.id);
     }
 
-    const newTask: Task = { ...taskData, tasklistId: assignedListId, id: Date.now().toString(), createdAt: new Date().toISOString(), lastModified: new Date().toISOString(), isCompleted: false, notificationId: null };
+    const newTask: Task = { ...taskData, tasklistId: assignedListId, id: uuidv4(), createdAt: new Date().toISOString(), lastModified: new Date().toISOString(), isCompleted: false, notificationId: null };
 
     setTasks(prev => [...prev, newTask]);
 
@@ -372,11 +380,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const deleteTask = (id: string) => {
     const task = tasks.find(t => t.id === id);
-    if (task?.googleId) {
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, isDeleted: true, lastModified: new Date().toISOString() } : t));
-    } else {
-      setTasks(prev => prev.filter(t => t.id !== id));
-    }
+    // Always mark as deleted (soft delete) instead of permanently removing
+    // This allows users to see and restore deleted tasks
+    console.log('[TaskContext] Deleting task:', id, 'title:', task?.title, 'has googleId:', !!task?.googleId);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, isDeleted: true, lastModified: new Date().toISOString() } : t));
     Notifications.cancelScheduledNotificationAsync(id).catch(() => { });
   };
 
@@ -701,7 +708,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   return (
     <TaskContext.Provider value={{
       tasks, taskLists, currentTaskList, currentTaskListId,
-      syncStatus, syncError, setCurrentTaskList, addTask, updateTask, deleteTask,
+      syncStatus, syncError, showDeletedTasks, setShowDeletedTasks, setCurrentTaskList, addTask, updateTask, deleteTask,
       permanentlyDeleteTask, reorderTasks, addTaskList, updateTaskList, deleteTaskList,
       downloadFromGoogle, uploadToGoogle
     }}>

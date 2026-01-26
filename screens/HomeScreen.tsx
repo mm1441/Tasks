@@ -38,6 +38,7 @@ import DueDateSectionList from "../components/DueDateSectionList";
 import CompletedTasksFooter from "../components/CompletedTasksFooter";
 import DeletedTasksFooter from "../components/DeletedTasksFooter";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+import NewTaskListModal from "../components/NewTaskListModal";
 
 // WebBrowser.maybeCompleteAuthSession();
 
@@ -64,9 +65,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     uploadToGoogle,
     syncStatus,
     syncError,
+    showDeletedTasks,
   } = useTasks();
+  
+  const [newListModalVisible, setNewListModalVisible] = useState(false);
   const { theme } = useTheme();
-  const { isAuthenticated, isLoading: authLoading, signIn, getAccessToken } = useGoogleAuth();
+  const { isAuthenticated, isLoading: authLoading, signIn, getAccessToken, userInfo } = useGoogleAuth();
   const { isOnline } = useNetworkStatus();
   const styles = makeStyles(theme);
 
@@ -92,8 +96,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [syncModalError, setSyncModalError] = useState<string | null>(null);
   const [syncModalBusy, setSyncModalBusy] = useState(false);
   const lastSyncActionRef = useRef<(() => Promise<void>) | null>(null);
-
-  const [showDeletedTasks, setShowDeletedTasks] = useState(false);
 
   // Inline status (toast fallback)
   const [inlineStatus, setInlineStatus] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -187,8 +189,21 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const deletedTasks = useMemo(() => {
     if (!currentTaskListId) return [];
-    return tasks.filter(t => t.tasklistId === currentTaskListId && t.isDeleted);
+    const allTasks = tasks.length;
+    const tasksWithIsDeleted = tasks.filter(t => t.isDeleted).length;
+    const filtered = tasks.filter(t => t.tasklistId === currentTaskListId && t.isDeleted);
+    console.log('[HomeScreen] deletedTasks computed:', filtered.length, 'tasks (total tasks:', allTasks, ', tasks with isDeleted:', tasksWithIsDeleted, ', currentListId:', currentTaskListId, ')');
+    if (filtered.length > 0) {
+      console.log('[HomeScreen] Deleted task IDs:', filtered.map(t => ({ id: t.id, title: t.title, isDeleted: t.isDeleted })));
+    }
+    return filtered;
   }, [tasks, currentTaskListId]);
+
+  // Debug: Log when showDeletedTasks changes
+  useEffect(() => {
+    console.log('[HomeScreen] showDeletedTasks changed to:', showDeletedTasks);
+    console.log('[HomeScreen] deletedTasks.length:', deletedTasks.length);
+  }, [showDeletedTasks, deletedTasks.length]);
 
   const activeIndex = useMemo(() => {
     if (!currentTaskList) return 0;
@@ -516,10 +531,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     }
   };
 
-  // Derived object for convenience
-  const currentTaskListLocal = useMemo(() => currentTaskList, [currentTaskList]);
-
-  const footers = (
+  const footers = useMemo(() => (
     <View>
       <CompletedTasksFooter
         tasks={completedTasks}
@@ -560,7 +572,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         />
       )}
     </View>
-  );
+  ), [completedTasks, isSelectionMode, selectedTaskIds, toggleSelectTask, navigation, showDeletedTasks, deletedTasks, permanentlyDeleteTask]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -632,7 +644,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </View>
           ) : (
             <TopBar
-              leftIcon={require('../assets/default-profile.png')}
+              leftIcon={userInfo?.picture ? { uri: userInfo.picture } : require('../assets/default-profile.png')}
               onLeftIconPress={() => navigation.dispatch(DrawerActions.openDrawer())}
               rightIcon1={
                 <Ionicons
@@ -651,13 +663,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               }
               onRightIcon1Press={handleSyncOptions}
               rightIcon2={<Ionicons name="filter" size={20} color={theme.text} />}
-              rightIcon3={<Ionicons name="ellipsis-vertical-outline" size={20} color={theme.text} />}
               filterMenuItems={filterMenuItems}
-              otherMenuItems={[
-                { label: 'Manage task lists', onPress: () => { navigation.navigate('TaskList'); } },
-                { label: 'Share task list', onPress: () => { shareTaskList(); } },
-                { label: 'Toggle show deleted tasks', onPress: () => { setShowDeletedTasks(!showDeletedTasks); } }
-              ]}
+              otherMenuItems={[]}
             />
           )}
         </View>
@@ -669,6 +676,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             if (index < 0 || index >= taskLists.length) return;
             setCurrentTaskList(taskLists[index].id);
           }}
+          onAddPress={() => setNewListModalVisible(true)}
         />
 
         {displayedTasks.length === 0 && completedTasks.length === 0 && (!showDeletedTasks || deletedTasks.length === 0) ? (
@@ -922,6 +930,15 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         </View>
       </Modal>
 
+      {/* New Task List Modal */}
+      <NewTaskListModal
+        visible={newListModalVisible}
+        onClose={() => setNewListModalVisible(false)}
+        onSubmit={(title) => {
+          addTaskList({ title });
+          setNewListModalVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -1011,18 +1028,10 @@ const makeStyles = (theme: any) =>
       fontWeight: '600',
     },
     listContent: {
-      paddingVertical: 6,
     },
     taskCard: {
       backgroundColor: theme.surface,
-      borderRadius: 12,
-      padding: 16,
-      marginBottom: 12,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 3,
-      elevation: 2,
+      padding: 0,
     },
     taskTitle: {
       fontSize: 18,
