@@ -1,20 +1,18 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TextInput,
   Pressable,
-  Keyboard,
   Platform,
+  Keyboard,
+  KeyboardEvent,
   Animated,
-  Dimensions,
 } from 'react-native';
+import Modal from 'react-native-modal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
-
-const { width } = Dimensions.get('window');
 
 interface NewTaskListModalProps {
   visible: boolean;
@@ -22,162 +20,144 @@ interface NewTaskListModalProps {
   onSubmit: (title: string) => void;
 }
 
-export default function NewTaskListModal({ visible, onClose, onSubmit }: NewTaskListModalProps) {
+export default function NewTaskListModal({
+  visible,
+  onClose,
+  onSubmit,
+}: NewTaskListModalProps) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const slideAnim = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
+
+  // Animated value to lift the card above the keyboard.
+  // Positive translateY moves _down_, so we use negative values to lift.
+  const translateY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
-      Animated.spring(slideAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 65,
-        friction: 11,
-      }).start();
-      
-      // Auto-focus the input when modal opens
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
+      // tiny delay helps ensure keyboard events come after focus
+      setTimeout(() => inputRef.current?.focus(), 150);
     } else {
-      slideAnim.setValue(0);
       setTitle('');
-      setKeyboardHeight(0);
-      Keyboard.dismiss();
+      // reset translateY immediately when modal closes
+      translateY.setValue(0);
     }
-  }, [visible]);
+  }, [visible, translateY]);
 
   useEffect(() => {
-    const showSubscription = Keyboard.addListener('keyboardDidShow', (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardHeight(0);
-    });
+    const onKeyboardShow = (e: KeyboardEvent) => {
+      const height = e.endCoordinates?.height ?? 0;
+      const duration = e.duration ?? 250;
+      const toValue = -Math.max(0, height)
+
+      Animated.timing(translateY, {
+        toValue,
+        duration,
+        useNativeDriver: true, // transforms support native driver
+      }).start();
+    };
+
+    const onKeyboardHide = (e?: KeyboardEvent) => {
+      const duration = e?.duration ?? 200;
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
+    const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
 
     return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
+      showSub.remove();
+      hideSub.remove();
     };
-  }, []);
+  }, [translateY, insets.bottom]);
 
   const handleSubmit = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
     onSubmit(trimmed);
-    setTitle('');
     onClose();
   };
 
-  const handleCancel = () => {
-    setTitle('');
-    onClose();
-  };
-
-  const styles = makeStyles(theme);
-
-  // Calculate bottom position: when keyboard is open, position above keyboard, otherwise at bottom with safe area
-  const bottomPosition = keyboardHeight > 0 ? keyboardHeight : insets.bottom;
+  const styles = makeStyles(theme, insets);
 
   return (
     <Modal
-      animationType="slide"
-      transparent
-      visible={visible}
-      onRequestClose={handleCancel}
+      isVisible={visible}
+      onBackdropPress={onClose}
+      onBackButtonPress={onClose}
+      backdropColor={theme.overlay}
+      avoidKeyboard
+      propagateSwipe
+      backdropOpacity={0.5}
+      useNativeDriver
+      animationIn="slideInUp"
+      animationOut="slideOutDown"
+      animationInTiming={300}
+      animationOutTiming={250}
+      style={styles.modal} // keep container anchored to bottom
     >
-      <Pressable style={styles.backdrop} onPress={handleCancel}>
-        <Pressable 
-          onStartShouldSetResponder={() => true} 
-          style={[
-            styles.modalContainer,
-            {
-              bottom: bottomPosition,
-            }
-          ]}
-        >
-          <Animated.View
-            style={[
-              styles.modalCard,
-              {
-                transform: [
-                  {
-                    translateY: slideAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [300, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <Text style={styles.modalTitle}>New Task List</Text>
+      {/* apply the transform to the card itself so react-native-modal layout stays stable */}
+      <Animated.View style={[styles.card, { transform: [{ translateY }] }]}>
+        <Text style={styles.title}>New Task List</Text>
 
-            <TextInput
-              ref={inputRef}
-              placeholder="List title"
-              placeholderTextColor={theme.muted}
-              value={title}
-              onChangeText={setTitle}
-              style={styles.input}
-              onSubmitEditing={handleSubmit}
-            />
+        <TextInput
+          ref={inputRef}
+          placeholder="List title"
+          placeholderTextColor={theme.muted}
+          value={title}
+          onChangeText={setTitle}
+          onSubmitEditing={handleSubmit}
+          style={styles.input}
+          returnKeyType="done"
+        />
 
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalButton} onPress={handleCancel}>
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalButton, styles.modalPrimary]}
-                onPress={handleSubmit}
-              >
-                <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Add</Text>
-              </Pressable>
-            </View>
-          </Animated.View>
-        </Pressable>
-      </Pressable>
+        <View style={styles.actions}>
+          <Pressable onPress={onClose} style={styles.button}>
+            <Text style={styles.buttonText}>Cancel</Text>
+          </Pressable>
+
+          <Pressable onPress={handleSubmit} style={[styles.button, styles.primary]}>
+            <Text style={[styles.buttonText, styles.primaryText]}>Add</Text>
+          </Pressable>
+        </View>
+      </Animated.View>
     </Modal>
   );
 }
 
-const makeStyles = (theme: any) =>
+const makeStyles = (theme: any, insets: any) =>
   StyleSheet.create({
-    backdrop: {
-      flex: 1,
-      backgroundColor: theme.overlay || 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'flex-end',
+    modal: {
+      margin: 0,
+      justifyContent: 'flex-end', // keep modal anchored bottom
     },
-    modalContainer: {
-      width: '100%',
-      position: 'absolute',
-      left: 0,
-      right: 0,
-    },
-    modalCard: {
-      width: '100%',
+    card: {
       backgroundColor: theme.surface,
       borderTopLeftRadius: 16,
       borderTopRightRadius: 16,
       padding: 20,
-      paddingBottom: 20,
+      paddingBottom: 20 + insets.bottom,
       ...Platform.select({
         ios: {
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
+          shadowOpacity: 0.15,
+          shadowRadius: 10,
         },
         android: {
-          elevation: 8,
+          elevation: 12,
         },
       }),
     },
-    modalTitle: {
+    title: {
       fontSize: 20,
       fontWeight: '600',
       marginBottom: 16,
@@ -194,26 +174,25 @@ const makeStyles = (theme: any) =>
       color: theme.text,
       fontSize: 16,
     },
-    modalActions: {
+    actions: {
       flexDirection: 'row',
       justifyContent: 'flex-end',
       gap: 8,
     },
-    modalButton: {
+    button: {
       paddingVertical: 10,
       paddingHorizontal: 16,
       borderRadius: 8,
     },
-    modalPrimary: {
+    primary: {
       backgroundColor: theme.primary,
-      marginLeft: 8,
     },
-    modalButtonText: {
-      color: theme.text,
-      fontWeight: '600',
+    buttonText: {
       fontSize: 16,
+      fontWeight: '600',
+      color: theme.text,
     },
-    modalPrimaryText: {
+    primaryText: {
       color: '#fff',
     },
   });

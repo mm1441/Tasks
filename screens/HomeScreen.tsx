@@ -37,8 +37,10 @@ import HorizontalScrollWithUnderline from "../components/HorizontalScrollWithUnd
 import DueDateSectionList from "../components/DueDateSectionList";
 import CompletedTasksFooter from "../components/CompletedTasksFooter";
 import DeletedTasksFooter from "../components/DeletedTasksFooter";
-import DateTimePickerModal from "react-native-modal-datetime-picker";
 import NewTaskListModal from "../components/NewTaskListModal";
+import AddNewTaskDrawer from "../components/AddNewTaskDrawer";
+import { generateThemeColors, getStableIndex } from "../utils/themeColors";
+import { getGradientThemeBases } from "../theme/colors";
 
 // WebBrowser.maybeCompleteAuthSession();
 
@@ -69,26 +71,25 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   } = useTasks();
   
   const [newListModalVisible, setNewListModalVisible] = useState(false);
-  const { theme } = useTheme();
+  const { theme, scheme, themeColor } = useTheme();
   const { isAuthenticated, isLoading: authLoading, signIn, getAccessToken, userInfo } = useGoogleAuth();
   const { isOnline } = useNetworkStatus();
   const styles = makeStyles(theme);
 
-  const [sortOption, setSortOption] = useState<SortOption>('custom');
+  // Generate theme colors for gradient effect (theme-specific)
+  const gradientTheme = useMemo(() => {
+    const bases = getGradientThemeBases(themeColor);
+    const base = scheme === 'dark' ? bases.dark : bases.light;
+    return generateThemeColors(base);
+  }, [scheme, themeColor]);
+
+  const [sortOption, setSortOption] = useState<SortOption>('dueDateAsc');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const isSelectionMode = selectedTaskIds.length > 0;
   const clearSelection = useCallback(() => setSelectedTaskIds([]), []);
   const insets = useSafeAreaInsets();
 
-  const [newTitle, setNewTitle] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [newDueDate, setNewDueDate] = useState<string>('');
-  const [showDatePicker, setShowDatePicker] = useState(false);
-
-  const [isAdding, setIsAdding] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const translateY = useRef(new Animated.Value(0)).current;
-  const titleInputRef = useRef<TextInput | null>(null);
+  const [isAddingTask, setIsAddingTask] = useState(false);
 
   // Sync modal state
   const [syncModalVisible, setSyncModalVisible] = useState(false);
@@ -105,34 +106,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     return () => clearTimeout(t);
   }, [inlineStatus]);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showListener = Keyboard.addListener(showEvent, (e) => {
-      const height = (e as any).endCoordinates?.height || 0;
-      setKeyboardHeight(height);
-      Animated.timing(translateY, {
-        toValue: -height,
-        duration: (e as any).duration || 300,
-        useNativeDriver: true,
-      }).start();
-    });
-
-    const hideListener = Keyboard.addListener(hideEvent, (e) => {
-      setKeyboardHeight(0);
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: (e as any).duration || 300,
-        useNativeDriver: true,
-      }).start();
-    });
-
-    return () => {
-      showListener.remove();
-      hideListener.remove();
-    };
-  }, []);
 
   useEffect(() => {
     if (taskLists.length > 0 && !currentTaskList) {
@@ -399,18 +372,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   };
 
   const openAdd = () => {
-    setIsAdding(true);
-    setTimeout(() => titleInputRef.current?.focus(), 100); // Small delay for render
+    setIsAddingTask(true);
   };
 
-  const closeAdd = (clear = true) => {
-    setIsAdding(false);
+  const closeAdd = () => {
+    setIsAddingTask(false);
     Keyboard.dismiss();
-    if (clear) {
-      setNewTitle('');
-      setNewDescription('');
-      setNewDueDate('');
-    }
   };
 
   useEffect(() => {
@@ -419,7 +386,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         clearSelection();
         return true;
       }
-      if (isAdding) {
+      if (isAddingTask) {
         closeAdd();
         return true;
       }
@@ -427,34 +394,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     });
 
     return () => sub.remove();
-  }, [isSelectionMode, clearSelection, isAdding]);
+  }, [isSelectionMode, clearSelection, isAddingTask]);
 
-  const handleSaveNewTask = async () => {
-    const trimmed = newTitle.trim();
-    if (!trimmed) return;
-
-    if (!currentTaskListId) {
-      Alert.alert('No list selected', 'Please select a task list first.');
-      return;
-    }
-
-    try {
-      await addTask({
-        title: trimmed,
-        description: newDescription.trim() || undefined,
-        dueDate: newDueDate.trim() || undefined,
-        tasklistId: currentTaskListId,
-      });
-
-      closeAdd(true);
-    } catch (err) {
-      console.error('Failed adding new task', err);
-      Alert.alert('Error', 'Failed to add task.');
-    }
-  };
 
   const renderDragListItem = (info: DragListRenderItemInfo<typeof tasks[0]>) => {
     const { item, onDragStart, onDragEnd, isActive } = info;
+    const stableIndex = getStableIndex(displayedTasks, item.id);
+    const backgroundColor = gradientTheme.getItemColor(stableIndex, displayedTasks.length);
     return (
       <TaskCard
         key={item.id}
@@ -473,6 +419,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         isActive={isActive}
         selected={selectedTaskIds.includes(item.id)}
         selectionMode={isSelectionMode}
+        backgroundColor={backgroundColor}
       />
     );
   };
@@ -485,9 +432,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   };
 
   const filterMenuItems = [
-    { label: 'Custom sort', onPress: () => selectSort('custom') },
     { label: 'Sort by due date ↑', onPress: () => selectSort('dueDateAsc') },
     { label: 'Sort by creation ↓', onPress: () => selectSort('createdAtDesc') },
+    { label: 'Custom sort', onPress: () => selectSort('custom') },
   ];
 
   const shareTaskList = async () => {
@@ -685,7 +632,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             <Text style={styles.emptySubtext}>Tap + to add your first task</Text>
           </View>
         ) : sortOption === 'custom' ? (
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, paddingTop: 16 }}>
             <DragList
               data={displayedTasks}
               keyExtractor={(it) => it.id}
@@ -712,21 +659,26 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             data={displayedTasks}
             keyExtractor={(item) => item.id}
             contentContainerStyle={[styles.listContent, { paddingBottom: 24 }]}
-            renderItem={({ item }) => (
-              <TaskCard
-                item={item}
-                showDragHandle={false}
-                onPress={() => {
-                  if (isSelectionMode)
-                    toggleSelectTask(item.id);
-                  else
-                    navigation.navigate('EditTask', { taskId: item.id });
-                }}
-                onLongPress={() => toggleSelectTask(item.id)}
-                selected={selectedTaskIds.includes(item.id)}
-                selectionMode={isSelectionMode}
-              />
-            )}
+            renderItem={({ item }) => {
+              const stableIndex = getStableIndex(displayedTasks, item.id);
+              const backgroundColor = gradientTheme.getItemColor(stableIndex, displayedTasks.length);
+              return (
+                <TaskCard
+                  item={item}
+                  showDragHandle={false}
+                  onPress={() => {
+                    if (isSelectionMode)
+                      toggleSelectTask(item.id);
+                    else
+                      navigation.navigate('EditTask', { taskId: item.id });
+                  }}
+                  onLongPress={() => toggleSelectTask(item.id)}
+                  selected={selectedTaskIds.includes(item.id)}
+                  selectionMode={isSelectionMode}
+                  backgroundColor={backgroundColor}
+                />
+              );
+            }}
             ListFooterComponent={footers}
           />
         )}
@@ -739,129 +691,45 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         >
           <Text style={styles.addButtonText}>+</Text>
         </TouchableOpacity>
-
-        {isAdding && (
-          <>
-            {/* Backdrop for outside tap to close */}
-            <TouchableWithoutFeedback onPress={() => closeAdd()}>
-              <View
-                style={[
-                  StyleSheet.absoluteFill,
-                  { backgroundColor: theme.overlay, zIndex: 10 },
-                ]}
-              />
-            </TouchableWithoutFeedback>
-
-            {/* Input panel */}
-            <Animated.View
+        {/* Backdrop for outside tap to close */}
+        {isAddingTask && (
+          <TouchableWithoutFeedback onPress={() => closeAdd()}>
+            <View
               style={[
-                {
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  zIndex: 11,
-                  backgroundColor: '#F5F4F5', // or theme.surface
-                  borderTopLeftRadius: 25,
-                  borderTopRightRadius: 25,
-                  overflow: 'hidden',
-                  transform: [{ translateY }],
-                },
+                StyleSheet.absoluteFill,
+                { backgroundColor: theme.overlay, zIndex: 10 },
               ]}
-            >
-              <View
-                style={{
-                  paddingHorizontal: 16,
-                  paddingTop: 8,
-                  paddingBottom: insets.bottom + 16,
-                }}
-              >
-                {/* Header */}
-                <View style={styles.bottomHeader}>
-                  <Text style={styles.modalTitle}>New Task</Text>
-                </View>
-
-                <ScrollView
-                  keyboardShouldPersistTaps="handled"
-                  contentContainerStyle={{ paddingBottom: 16 }} // Extra if needed
-                >
-                  <View style={{ marginTop: 8 }}>
-                    <Text style={styles.label}>Title *</Text>
-                    <TextInput
-                      ref={titleInputRef}
-                      style={styles.input}
-                      value={newTitle}
-                      onChangeText={setNewTitle}
-                      placeholder="Enter task title"
-                      placeholderTextColor={theme.muted}
-                      returnKeyType="done"
-                      onSubmitEditing={handleSaveNewTask}
-                    />
-                  </View>
-
-                  <View style={{ marginTop: 12 }}>
-                      <Text style={styles.label}>Description</Text>
-                      <TextInput
-                        style={[styles.input, styles.textArea]}
-                        value={newDescription}
-                        onChangeText={setNewDescription}
-                        placeholder="Enter description (optional)"
-                        placeholderTextColor={theme.muted}
-                        multiline
-                        numberOfLines={4}
-                        textAlignVertical="top"
-                      />
-                    </View>
-
-                  <View style={{ marginTop: 12 }}>
-                    <Text style={styles.label}>Due Date & Time</Text>
-                    <TouchableOpacity onPress={() => setShowDatePicker(true)}>
-                      <View pointerEvents="none">
-                        <TextInput
-                          style={styles.input}
-                          value={newDueDate ? newDueDate.replace('T', ' ') : ''}
-                          placeholder="Tap to select date & time (optional)"
-                          placeholderTextColor={theme.muted}
-                          editable={false}
-                        />
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 }}>
-                    <Pressable style={styles.modalButton} onPress={() => closeAdd()}>
-                      <Text style={styles.modalButtonText}>Cancel</Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={[styles.modalButton, styles.modalPrimary, { marginLeft: 8 }]}
-                      onPress={handleSaveNewTask}
-                      disabled={!newTitle.trim()}
-                    >
-                      <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Save</Text>
-                    </Pressable>
-                  </View>
-                </ScrollView>
-              </View>
-            </Animated.View>
-          </>
+            />
+          </TouchableWithoutFeedback>
         )}
 
-        {/* DateTime picker */}
-        <DateTimePickerModal
-          isVisible={showDatePicker}
-          mode="datetime"
-          onConfirm={(selectedDate: Date) => {
-            setShowDatePicker(false);
-            const year = selectedDate.getFullYear();
-            const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-            const day = String(selectedDate.getDate()).padStart(2, '0');
-            const hours = String(selectedDate.getHours()).padStart(2, '0');
-            const minutes = String(selectedDate.getMinutes()).padStart(2, '0');
-            setNewDueDate(`${year}-${month}-${day}T${hours}:${minutes}`);
+        <AddNewTaskDrawer
+          visible={isAddingTask}
+          onClose={() => closeAdd()}
+          onSubmit={async (title, description, dueDate) => {
+            const trimmed = title.trim();
+            if (!trimmed) return;
+
+            if (!currentTaskListId) {
+              Alert.alert('No list selected', 'Please select a task list first.');
+              return;
+            }
+
+            try {
+              await addTask({
+                title: trimmed,
+                description: description,
+                dueDate: dueDate,
+                tasklistId: currentTaskListId,
+              });
+
+              closeAdd();
+            } catch (err) {
+              console.error('Failed adding new task', err);
+              Alert.alert('Error', 'Failed to add task.');
+            }
           }}
-          onCancel={() => setShowDatePicker(false)}
-          date={newDueDate ? new Date(newDueDate) : new Date()}
+          currentTaskListId={currentTaskListId}
         />
 
       </View>

@@ -23,6 +23,7 @@ type TaskCardProps = {
   isActive?: boolean;
   selected?: boolean;
   selectionMode?: boolean;
+  backgroundColor?: string;
 };
 
 function TaskCardInner({ 
@@ -33,7 +34,8 @@ function TaskCardInner({
   onDragStart, 
   onDragEnd, 
   isActive, 
-  selected 
+  selected,
+  backgroundColor 
 }: TaskCardProps) {
   const { updateTask } = useTasks();
   const { theme } = useTheme();
@@ -66,6 +68,7 @@ function TaskCardInner({
     <TouchableOpacity
       style={[
         styles.taskCard,
+        backgroundColor && { backgroundColor },
         isActive && styles.draggingCard,
       ]}
       onPress={onPress}
@@ -80,7 +83,7 @@ function TaskCardInner({
           value={item.isCompleted || false}
           onValueChange={toggleComplete}
           disabled={isActive}
-          color={item.isCompleted ? theme.primary : undefined}
+          color={item.isCompleted ? theme.primary : undefined} //TODO: How to add white checkbox?
         />
       </TouchableOpacity>
 
@@ -129,6 +132,7 @@ function areEqual(prev: TaskCardProps, next: TaskCardProps) {
   if (prev.showDragHandle !== next.showDragHandle) return false;
   if (!!prev.selected !== !!next.selected) return false;
   if (!!prev.selectionMode !== !!next.selectionMode) return false;
+  if (prev.backgroundColor !== next.backgroundColor) return false;
   return true; // equal -> skip render
 }
 
@@ -149,6 +153,7 @@ const makeStyles = (theme: any) =>
       shadowOpacity: 0.1,
       shadowRadius: 3,
       elevation: 2,
+      marginHorizontal: 16,
     },
     checkboxWrapper: {
       padding: 10,  // Larger touch area for checkbox
@@ -183,11 +188,11 @@ const makeStyles = (theme: any) =>
       padding: 16,
       justifyContent: 'center',
       alignItems: 'center',
+      color: theme.surface,
     },
     draggingCard: {
       shadowOpacity: 0,
       elevation: 0,
-      backgroundColor: theme.subtle,
     },
     checkWrap: {
       position: 'absolute',

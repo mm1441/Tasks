@@ -24,8 +24,9 @@ const { height } = Dimensions.get('window');
 
 export default function CustomDrawer(props: DrawerContentComponentProps) {
   const { navigation } = props;
-  const { theme, scheme, toggleTheme } = useTheme();
+  const { theme, scheme, themeColor, toggleTheme, setThemeColor } = useTheme();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showThemeColorDropdown, setShowThemeColorDropdown] = useState(false);
   const { 
     tasks, 
     currentTaskList, 
@@ -35,8 +36,8 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
   const { isAuthenticated, signIn, signOut, userInfo } = useGoogleAuth();
 
   // Use real user data when authenticated, otherwise use defaults
-  const displayName = userInfo?.name || "Firstname Lastname";
-  const displayEmail = userInfo?.email || "firstname.lastname@example.com";
+  const displayName = userInfo?.name || "Name Lastname";
+  const displayEmail = userInfo?.email || "name.lastname@example.com";
   const profilePicture = userInfo?.picture ? { uri: userInfo.picture } : DEFAULT_AVATAR;
 
   const styles = makeStyles(theme);
@@ -138,6 +139,12 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
     }
   };
 
+  const themeColorOptions: Array<{ color: '#09b895' | '#2a84f1' | '#c2791d'; label: string }> = [
+    { color: '#09b895', label: 'Teal' },
+    { color: '#2a84f1', label: 'Blue' },
+    { color: '#c2791d', label: 'Orange' },
+  ];
+
   const menuItems: { key: string; label: string; icon: React.ReactNode; onPress: () => void }[] =
     [
       {
@@ -164,6 +171,14 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
         onPress: () => {
           navigation.closeDrawer();
           handleToggleShowDeletedTasks();
+        },
+      },
+      {
+        key: "themeColor",
+        label: "Theme color",
+        icon: <Ionicons name="color-palette-outline" size={20} color={theme.text} />,
+        onPress: () => {
+          setShowThemeColorDropdown(!showThemeColorDropdown);
         },
       },
       // {
@@ -238,10 +253,51 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
       {/* Menu section */}
       <View style={styles.menuSection}>
         {menuItems.map((it) => (
-          <TouchableOpacity key={it.key} style={styles.menuItem} onPress={it.onPress}>
-            <View style={styles.menuIcon}>{it.icon}</View>
-            <Text style={styles.menuLabel}>{it.label}</Text>
-          </TouchableOpacity>
+          <View key={it.key}>
+            <TouchableOpacity style={styles.menuItem} onPress={it.onPress}>
+              <View style={styles.menuIcon}>{it.icon}</View>
+              <Text style={styles.menuLabel}>{it.label}</Text>
+              {it.key === "themeColor" && (
+                <Ionicons 
+                  name={showThemeColorDropdown ? "chevron-up" : "chevron-down"} 
+                  size={16} 
+                  color={theme.text} 
+                  style={{ marginLeft: 'auto' }}
+                />
+              )}
+            </TouchableOpacity>
+            
+            {/* Theme color dropdown */}
+            {it.key === "themeColor" && showThemeColorDropdown && (
+              <View style={styles.themeColorDropdown}>
+                {themeColorOptions.map((option) => (
+                  <TouchableOpacity
+                    key={option.color}
+                    style={[
+                      styles.themeColorOption,
+                      themeColor === option.color && styles.themeColorOptionSelected,
+                    ]}
+                    onPress={async () => {
+                      await setThemeColor(option.color);
+                      setShowThemeColorDropdown(false);
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.themeColorCircle,
+                        { backgroundColor: option.color },
+                        themeColor === option.color && styles.themeColorCircleSelected,
+                      ]}
+                    />
+                    <Text style={styles.themeColorLabel}>{option.label}</Text>
+                    {themeColor === option.color && (
+                      <Ionicons name="checkmark" size={18} color={theme.primary} style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
         ))}
       </View>
 
@@ -292,7 +348,6 @@ const makeStyles = (theme: any) =>
     themeToggle: {
       paddingRight: 4,
       borderRadius: 8,
-      backgroundColor: theme.background,
     },
     userInfo: {
       marginTop: 12,
@@ -345,8 +400,8 @@ const makeStyles = (theme: any) =>
     },
     footer: {
       padding: 12,
-      borderTopWidth: 1,
-      borderTopColor: theme.border,
+      borderTopWidth: 0.5,
+      borderTopColor: theme.primary,
     },
     loginLogoutButton: {
       flexDirection: "row",
@@ -355,7 +410,6 @@ const makeStyles = (theme: any) =>
       paddingHorizontal: 12,
       borderRadius: 10,
       marginBottom: 8,
-      backgroundColor: theme.background,
     },
     loginLogoutText: {
       fontSize: 15,
@@ -365,5 +419,42 @@ const makeStyles = (theme: any) =>
     footerText: {
       fontSize: 12,
       color: theme.muted,
+    },
+    themeColorDropdown: {
+      marginLeft: 48,
+      marginTop: 4,
+      marginBottom: 4,
+      paddingVertical: 4,
+      backgroundColor: theme.surface,
+      borderRadius: 8,
+    },
+    themeColorOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      marginVertical: 2,
+    },
+    themeColorOptionSelected: {
+      backgroundColor: theme.background,
+      borderWidth: 2,
+      borderColor: theme.primary,
+    },
+    themeColorCircle: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      marginRight: 12,
+      borderWidth: 2,
+      borderColor: theme.border,
+    },
+    themeColorCircleSelected: {
+      borderWidth: 3,
+      borderColor: theme.primary,
+    },
+    themeColorLabel: {
+      fontSize: 14,
+      color: theme.text,
     },
   });

@@ -1,10 +1,12 @@
 // components/DueDateSectionList.tsx
-import { ComponentType, ReactElement, ReactNode } from 'react';
+import { ComponentType, ReactElement, ReactNode, useMemo } from 'react';
 import { SectionList, Text, View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import type { Task } from '../types/Task';
 import TaskCard from './TaskCard';
 import { buildDueDateSections } from '../utils/buildDueDateSections';
 import { useTheme } from '../context/ThemeContext';
+import { generateThemeColors, getStableIndex } from '../utils/themeColors';
+import { getGradientThemeBases } from '../theme/colors';
 
 type Section = {
   title: string;
@@ -31,9 +33,16 @@ export default function DueDateSectionList({
   ListFooterComponent,
   contentContainerStyle,
 }: Props) {
-  const { theme } = useTheme();
+  const { theme, scheme, themeColor } = useTheme();
   const styles = makeStyles(theme);
   const sections: Section[] = buildDueDateSections(tasks);
+  
+  // Generate theme colors for gradient effect (theme-specific)
+  const gradientTheme = useMemo(() => {
+    const bases = getGradientThemeBases(themeColor);
+    const base = scheme === 'dark' ? bases.dark : bases.light;
+    return generateThemeColors(base);
+  }, [scheme, themeColor]);
 
   return (
     <SectionList
@@ -44,16 +53,22 @@ export default function DueDateSectionList({
       renderSectionHeader={({ section }) => (
         <Text style={styles.sectionTitle}>{section.title}</Text>
       )}
-      renderItem={({ item }) => (
-        <TaskCard
-          item={item}
-          showDragHandle={false}
-          onPress={() => onPress(item.id)}
-          onLongPress={() => onLongPress(item.id)}
-          selected={selectedIds.includes(item.id)}
-          selectionMode={selectionMode}
-        />
-      )}
+      renderItem={({ item }) => {
+        // Calculate stable index based on all tasks (not just section)
+        const stableIndex = getStableIndex(tasks, item.id);
+        const backgroundColor = gradientTheme.getItemColor(stableIndex, tasks.length);
+        return (
+          <TaskCard
+            item={item}
+            showDragHandle={false}
+            onPress={() => onPress(item.id)}
+            onLongPress={() => onLongPress(item.id)}
+            selected={selectedIds.includes(item.id)}
+            selectionMode={selectionMode}
+            backgroundColor={backgroundColor}
+          />
+        );
+      }}
     />
   );
 }
@@ -62,13 +77,13 @@ export default function DueDateSectionList({
 const makeStyles = (theme: any) =>
   StyleSheet.create({
     listContent: {
-      padding: 16,
     },
     sectionTitle: {
       fontSize: 14,
       fontWeight: '600',
-      color: theme.muted,
+      color: theme.primary,
       marginTop: 16,
       marginBottom: 8,
+      padding: 16,
     },
   });

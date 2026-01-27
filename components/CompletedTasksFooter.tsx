@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TaskCard from './TaskCard';
 import { useTheme } from '../context/ThemeContext';
 import type { Task } from '../types/Task';
+import { generateThemeColors, getStableIndex } from '../utils/themeColors';
+import { getGradientThemeBases } from '../theme/colors';
 
 interface Props {
   tasks: Task[];
@@ -20,9 +22,16 @@ export default function CompletedTasksFooter({
   onPressTask,
   onLongPressTask,
 }: Props) {
-  const { theme } = useTheme();
+  const { theme, scheme, themeColor } = useTheme();
   const styles = makeStyles(theme);
   const [open, setOpen] = useState(false);
+
+  // Generate theme colors for gradient effect (separate gradient for completed tasks, theme-specific)
+  const gradientTheme = useMemo(() => {
+    const bases = getGradientThemeBases(themeColor);
+    const base = scheme === 'dark' ? bases.dark : bases.light;
+    return generateThemeColors(base);
+  }, [scheme, themeColor]);
 
   // Auto-open when tasks appear
   useEffect(() => {
@@ -56,16 +65,22 @@ export default function CompletedTasksFooter({
             data={tasks}
             keyExtractor={(t) => t.id}
             scrollEnabled={false}
-            renderItem={({ item }) => (
-              <TaskCard
-                item={item}
-                showDragHandle={false}
-                onPress={() => onPressTask(item.id)}
-                onLongPress={() => onLongPressTask(item.id)}
-                selected={selectedTaskIds.includes(item.id)}
-                selectionMode={isSelectionMode}
-              />
-            )}
+            renderItem={({ item }) => {
+              // Calculate stable index for completed tasks (separate gradient that restarts)
+              const stableIndex = getStableIndex(tasks, item.id);
+              const backgroundColor = gradientTheme.getItemColor(stableIndex, tasks.length);
+              return (
+                <TaskCard
+                  item={item}
+                  showDragHandle={false}
+                  onPress={() => onPressTask(item.id)}
+                  onLongPress={() => onLongPressTask(item.id)}
+                  selected={selectedTaskIds.includes(item.id)}
+                  selectionMode={isSelectionMode}
+                  backgroundColor={backgroundColor}
+                />
+              );
+            }}
           />
         </View>
       )}
@@ -79,12 +94,9 @@ const makeStyles = (theme: any) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 12,
+      paddingHorizontal: 16,
       height: 48,
-      borderRadius: 12,
-      backgroundColor: theme.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.border,
+
     },
     title: {
       fontSize: 16,

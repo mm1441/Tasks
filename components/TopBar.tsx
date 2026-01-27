@@ -183,9 +183,7 @@ const makeStyles = (theme: any) =>
   StyleSheet.create({
     container: {
       height: 64,
-      backgroundColor: theme.surface,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.border,
+      backgroundColor: theme.background,
       justifyContent: 'center',
       zIndex: 10,
     },

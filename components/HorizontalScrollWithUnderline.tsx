@@ -229,8 +229,8 @@ const makeStyles = (theme: any) =>
       height: 56,
       justifyContent: 'center',
       borderBottomWidth: 0.5,
-      borderBottomColor: theme.border,
-      backgroundColor: theme.surface,
+      borderBottomColor: theme.primary,
+      backgroundColor: theme.background,
     },
     text: {
       fontSize: 16,

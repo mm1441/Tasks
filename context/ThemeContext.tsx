@@ -1,23 +1,29 @@
 // context/ThemeContext.tsx
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { light, dark, type AppTheme } from '../theme/colors';
+import { getThemeColors, type AppTheme } from '../theme/colors';
 import type { ReactNode } from 'react';
 
 const STORAGE_KEY = '@app_theme'; // stores 'light' or 'dark'
+const THEME_COLOR_STORAGE_KEY = '@app_theme_color'; // stores theme color hex
+
+export type ThemeColorOption = '#09b895' | '#2a84f1' | '#c2791d';
 
 type ThemeContextValue = {
   theme: AppTheme;
   scheme: 'light' | 'dark';
+  themeColor: ThemeColorOption;
   toggleTheme: () => Promise<void>;
   setScheme: (s: 'light' | 'dark') => Promise<void>;
+  setThemeColor: (color: ThemeColorOption) => Promise<void>;
 };
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [scheme, setSchemeState] = useState<'light' | 'dark'>('light'); // default
-  const theme = scheme === 'dark' ? dark : light;
+  const [themeColor, setThemeColorState] = useState<ThemeColorOption>('#2a84f1'); // default
+  const theme = useMemo(() => getThemeColors(scheme, themeColor), [scheme, themeColor]);
 
   useEffect(() => {
     (async () => {
@@ -30,6 +36,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           // import { Appearance } from 'react-native';
           // const sys = Appearance.getColorScheme();
           // if (sys) setSchemeState(sys);
+        }
+        
+        const storedColor = await AsyncStorage.getItem(THEME_COLOR_STORAGE_KEY);
+        if (storedColor && (storedColor === '#09b895' || storedColor === '#2a84f1' || storedColor === '#c2791d')) {
+          setThemeColorState(storedColor as ThemeColorOption);
         }
       } catch (e) {
         // ignore
@@ -56,8 +67,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     await persist(s);
   };
 
+  const setThemeColor = async (color: ThemeColorOption) => {
+    setThemeColorState(color);
+    try {
+      await AsyncStorage.setItem(THEME_COLOR_STORAGE_KEY, color);
+    } catch (e) {
+      // ignore
+    }
+  };
+
   return (
-    <ThemeContext.Provider value={{ theme, scheme, toggleTheme, setScheme }}>
+    <ThemeContext.Provider value={{ theme, scheme, themeColor, toggleTheme, setScheme, setThemeColor }}>
       {children}
     </ThemeContext.Provider>
   );
