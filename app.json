@@ -10,7 +10,18 @@
     "scheme": "com.magicmarinac.tasks",
     "ios": {
       "bundleIdentifier": "com.magicmarinac.tasks",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.magicmarinac.tasks.expowidgets"
+        ],
+        "aps-environment": "development"
+      },
+      "infoPlist": {
+        "NSSupportsLiveActivities": false,
+        "NSSupportsLiveActivitiesFrequentUpdates": false,
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.magicmarinac.tasks",
@@ -31,9 +42,9 @@
         "@bittingz/expo-widgets",
         {
           "ios": {
-            "src": "./widgets/ios", // Create this folder for Swift files
-            "devTeamId": "YOUR_APPLE_DEV_TEAM_ID", // From developer.apple.com
-            "mode": "development", // Or "production"
+            "src": "./widgets/ios",
+            "devTeamId": "YOUR_APPLE_DEV_TEAM_ID",
+            "mode": "development",
             "useLiveActivities": false,
             "frequentUpdates": false,
             "entitlements": {
@@ -43,12 +54,12 @@
             }
           },
           "android": {
-            "src": "./widgets/android", // Create this folder for Kotlin/XML files
+            "src": "./widgets/android",
             "distPlaceholder": "package_name",
             "widgets": [
               {
-                "name": "TasksWidgetProvider", // Your widget class name
-                "resourceName": "@xml/tasks_widget_info" // Matches your XML file
+                "name": "TasksWidgetProvider",
+                "resourceName": "@xml/tasks_widget_info"
               }
             ]
           }

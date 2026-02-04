@@ -93,6 +93,19 @@ class TasksWidgetProvider : AppWidgetProvider() {
         )
         views.setOnClickPendingIntent(R.id.add_task_button, addTaskPendingIntent)
         
+        // Set click intent for header spacer (open HomeScreen)
+        val openHomeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("com.magicmarinac.tasks://home")).apply {
+            setPackage(context.packageName)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val openHomePendingIntent = PendingIntent.getActivity(
+            context,
+            appWidgetId + 40000,
+            openHomeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        views.setOnClickPendingIntent(R.id.header_open_home, openHomePendingIntent)
+        
         // Set up RemoteViewsService for ListView
         val intent = Intent(context, TaskListService::class.java)
         intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)

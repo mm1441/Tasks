@@ -14,6 +14,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import TaskListScreen from "./screens/TaskListScreen";
 import { Linking } from "react-native";
+import { StatusBar } from "expo-status-bar";
 
 
 export type RootStackParamList = {
@@ -231,6 +232,9 @@ function NavigationInner() {
         } else {
           navigationRef.navigate("AddTask", { taskListId: tasklistId });
         }
+      } else if (url.includes("home")) {
+        console.log("[App] → Processing home deep link, navigating to HomeScreen");
+        navigationRef.navigate("Root");
       }
     };
 
@@ -266,7 +270,7 @@ function NavigationInner() {
 
   return (
     <NavigationContainer ref={navigationRef} theme={navTheme}>
-      {/* <StatusBar style={scheme === "dark" ? "light" : "dark"} /> */}
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
       <Stack.Navigator
         id="AppStack"
         screenOptions={{

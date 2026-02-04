@@ -248,7 +248,7 @@ const makeStyles = (theme: any) =>
       position: 'absolute',
       top: 64,
       right: 8,
-      backgroundColor: theme.surface,
+      backgroundColor: theme.background,
       borderRadius: 8,
       elevation: 6,
       shadowColor: '#000',

@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TaskCard from './TaskCard';
 import { useTheme } from '../context/ThemeContext';
 import type { Task } from '../types/Task';
+import { getGradientThemeBases } from '../theme/colors';
+import { generateThemeColors, getStableIndex } from '../utils/themeColors';
 
 interface Props {
   tasks: Task[];
@@ -22,9 +24,21 @@ export default function DeletedTasksFooter({
   onLongPressTask,
   onClearAll,
 }: Props) {
-  const { theme } = useTheme();
-  const styles = makeStyles(theme);
+  const { theme, scheme, themeColor } = useTheme();
+  const styles = makeStyles(theme, scheme);
   const [open, setOpen] = useState(false);
+
+  // Generate theme colors for gradient effect (separate gradient for completed tasks, theme-specific)
+  const gradientTheme = useMemo(() => {
+    const bases = getGradientThemeBases(themeColor);
+    const base = scheme === 'dark' ? bases.dark : bases.light;
+    return generateThemeColors(base, scheme);
+  }, [scheme, themeColor]);
+
+  const getCardBackgroundColor = (stableIndex: number, totalCount: number): string | undefined => {
+    if (themeColor === 'default') return undefined;
+    return gradientTheme.getItemColor(stableIndex, totalCount);
+  };
 
   // Auto-open when tasks appear
   useEffect(() => {
@@ -58,22 +72,32 @@ export default function DeletedTasksFooter({
             data={tasks}
             keyExtractor={(t) => t.id}
             scrollEnabled={false}
-            renderItem={({ item }) => (
-              <TaskCard
-                item={item}
-                showDragHandle={false}
-                onPress={() => onPressTask(item.id)}
-                onLongPress={() => onLongPressTask(item.id)}
-                selected={selectedTaskIds.includes(item.id)}
-                selectionMode={isSelectionMode}
-              />
-            )}
+            renderItem={({ item, index }) => {
+              const stableIndex = getStableIndex(tasks, item.id);
+              const backgroundColor = getCardBackgroundColor(stableIndex, tasks.length);
+              const isFirstInList = index === 0;
+              const isLastInList = index === tasks.length - 1;
+              return (
+                <TaskCard
+                  item={item}
+                  showDragHandle={false}
+                  onPress={() => onPressTask(item.id)}
+                  onLongPress={() => onLongPressTask(item.id)}
+                  selected={selectedTaskIds.includes(item.id)}
+                  selectionMode={isSelectionMode}
+                  backgroundColor={backgroundColor}
+                  isFirstInList={isFirstInList}
+                  isLastInList={isLastInList}
+                />
+              );
+            }}
           />
           <TouchableOpacity
             style={styles.clearButton}
             onPress={onClearAll}
           >
-            <Text style={styles.clearText}>Clear all deleted tasks</Text>
+            <Ionicons name="trash-outline" size={16} color={theme.text} />
+            <Text style={styles.clearText}>Clear ALL deleted tasks</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -81,33 +105,37 @@ export default function DeletedTasksFooter({
   );
 }
 
-const makeStyles = (theme: any) =>
+const makeStyles = (theme: any, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 12,
-      height: 48,
-      borderRadius: 12,
-      backgroundColor: theme.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.border,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      marginTop: 10,
+      marginBottom: 0,
+      height: 40,
     },
     title: {
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: '600',
-      color: theme.text,
+      color: theme.primary,
     },
     clearButton: {
-      backgroundColor: '#FF3B30',
-      borderRadius: 8,
-      padding: 12,
+      alignSelf: 'stretch',
+      flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 12,
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: scheme === 'dark' ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.1)',
+      borderRadius: 8,
+      paddingVertical: 12,
+      marginHorizontal: 16,
+      marginTop: 16,
     },
     clearText: {
-      color: '#fff',
+      color: scheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)',
       fontWeight: '600',
     },
   });

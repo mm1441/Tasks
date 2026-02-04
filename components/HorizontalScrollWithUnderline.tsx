@@ -28,8 +28,8 @@ interface Props {
 }
 
 const HorizontalScrollWithUnderline: FC<Props> = ({taskLists, selectedIndex, onActiveChange, onAddPress}) => {
-  const { theme } = useTheme();
-  const styles = makeStyles(theme);
+  const { theme, scheme } = useTheme();
+  const styles = makeStyles(theme, scheme);
   const listRef = useRef<FlatList>(null);
   const [activeIndex, setActiveIndex] = useState<number>(() =>
     typeof selectedIndex === 'number' && selectedIndex >= 0 ? selectedIndex : 0
@@ -223,13 +223,13 @@ const HorizontalScrollWithUnderline: FC<Props> = ({taskLists, selectedIndex, onA
   );
 };
 
-const makeStyles = (theme: any) =>
+const makeStyles = (theme: any, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     wrapper: {
       height: 56,
       justifyContent: 'center',
       borderBottomWidth: 0.5,
-      borderBottomColor: theme.primary,
+      borderBottomColor: scheme === 'light' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.05)',
       backgroundColor: theme.background,
     },
     text: {

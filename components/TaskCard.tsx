@@ -24,6 +24,8 @@ type TaskCardProps = {
   selected?: boolean;
   selectionMode?: boolean;
   backgroundColor?: string;
+  isFirstInList?: boolean;
+  isLastInList?: boolean;
 };
 
 function TaskCardInner({ 
@@ -35,12 +37,16 @@ function TaskCardInner({
   onDragEnd, 
   isActive, 
   selected,
-  backgroundColor 
+  selectionMode = false,
+  backgroundColor,
+  isFirstInList,
+  isLastInList,
 }: TaskCardProps) {
   const { updateTask } = useTasks();
   const { theme } = useTheme();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const styles = makeStyles(theme);
+  const styles = makeStyles(theme, isLastInList ?? false);
+
+  const iconMutedColor = theme.name === 'dark' ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)';
 
   const toggleComplete = (value: boolean) => {
     updateTask({ ...item, isCompleted: value });
@@ -70,6 +76,8 @@ function TaskCardInner({
         styles.taskCard,
         backgroundColor && { backgroundColor },
         isActive && styles.draggingCard,
+        isFirstInList && styles.taskCardFirst,
+        isLastInList && styles.taskCardLast,
       ]}
       onPress={onPress}
       onLongPress={() => onLongPress(item.id)}
@@ -77,13 +85,19 @@ function TaskCardInner({
     >
       <TouchableOpacity
         style={styles.checkboxWrapper}
-        onPress={() => toggleComplete(!item.isCompleted)}
+        onPress={() => {
+          if (selectionMode) {
+            onPress?.();
+          } else {
+            toggleComplete(!item.isCompleted);
+          }
+        }}
       >
         <Checkbox
           value={item.isCompleted || false}
           onValueChange={toggleComplete}
           disabled={isActive}
-          color={item.isCompleted ? theme.primary : undefined} //TODO: How to add white checkbox?
+          color={item.isCompleted ? theme.primary : iconMutedColor}
         />
       </TouchableOpacity>
 
@@ -109,14 +123,14 @@ function TaskCardInner({
           onPressOut={onDragEnd}
           style={styles.dragHandle}
         >
-          <Ionicons name="reorder-three" size={24} color={theme.text} />
+          <Ionicons name="reorder-three" size={24} color={iconMutedColor} />
         </TouchableOpacity>
       )}
 
       {selected && (
         <View style={styles.checkWrap}>
           <View style={styles.checkCircle}>
-            <Ionicons name="checkmark" size={16} ccolor={theme.text} />
+            <Ionicons name="checkmark" size={16} color={theme.text} />
           </View>
         </View>
       )}
@@ -128,11 +142,17 @@ function TaskCardInner({
 function areEqual(prev: TaskCardProps, next: TaskCardProps) {
   if (prev.item.id !== next.item.id) return false;
   if (prev.item.isCompleted !== next.item.isCompleted) return false;
+  // Compare displayed task fields so card re-renders when task is updated (e.g. from EditTaskScreen)
+  if (prev.item.title !== next.item.title) return false;
+  if (prev.item.description !== next.item.description) return false;
+  if (prev.item.dueDate !== next.item.dueDate) return false;
   if (prev.isActive !== next.isActive) return false;
   if (prev.showDragHandle !== next.showDragHandle) return false;
   if (!!prev.selected !== !!next.selected) return false;
   if (!!prev.selectionMode !== !!next.selectionMode) return false;
   if (prev.backgroundColor !== next.backgroundColor) return false;
+  if (!!prev.isFirstInList !== !!next.isFirstInList) return false;
+  if (!!prev.isLastInList !== !!next.isLastInList) return false;
   return true; // equal -> skip render
 }
 
@@ -141,22 +161,28 @@ function areEqual(prev: TaskCardProps, next: TaskCardProps) {
 const TaskCard = React.memo(TaskCardInner, areEqual);
 export default TaskCard;
 
-const makeStyles = (theme: any) =>
+const makeStyles = (theme: any, isLastInList: boolean) =>
   StyleSheet.create({
     taskCard: {
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: theme.surface,
+      boxSizing: 'border-box',
       padding: 16,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 3,
-      elevation: 2,
       marginHorizontal: 16,
+      borderBottomWidth: isLastInList ? 0 : 0.5,
+      borderBottomColor: theme.border,
+    },
+    taskCardFirst: {
+      borderTopLeftRadius: 6,
+      borderTopRightRadius: 6,
+    },
+    taskCardLast: {
+      borderBottomLeftRadius: 6,
+      borderBottomRightRadius: 6,
     },
     checkboxWrapper: {
-      padding: 10,  // Larger touch area for checkbox
+      padding: 10,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -177,27 +203,28 @@ const makeStyles = (theme: any) =>
     },
     taskDueDate: {
       fontSize: 13,
-      color: theme.primary,
-      fontWeight: "500",
+      color: theme.dueDateText,
+      fontWeight: "600",
     },
     taskDueDatePast: {
-      color: "#d32f2f", 
+      color: theme.dueDateText, 
+      fontWeight: "600",
     },
     dragHandle: {
       marginLeft: 12,
-      padding: 16,
+      paddingHorizontal: 16,
       justifyContent: 'center',
       alignItems: 'center',
       color: theme.surface,
     },
     draggingCard: {
-      shadowOpacity: 0,
       elevation: 0,
     },
     checkWrap: {
       position: 'absolute',
-      right: 12,
-      top: 12,
+      right: '8%',
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     checkCircle: {
       width: 26,

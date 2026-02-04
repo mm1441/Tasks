@@ -15,6 +15,7 @@ import type { DrawerContentComponentProps } from "@react-navigation/drawer";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { useTasks } from "../context/TaskContext";
+import { THEME_COLOR_OPTIONS } from "../theme/colors";
 import { useGoogleAuth } from "../context/GoogleAuthContext";
 
 
@@ -139,11 +140,7 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
     }
   };
 
-  const themeColorOptions: Array<{ color: '#09b895' | '#2a84f1' | '#c2791d'; label: string }> = [
-    { color: '#09b895', label: 'Teal' },
-    { color: '#2a84f1', label: 'Blue' },
-    { color: '#c2791d', label: 'Orange' },
-  ];
+  const themeColorOptions = THEME_COLOR_OPTIONS;
 
   const menuItems: { key: string; label: string; icon: React.ReactNode; onPress: () => void }[] =
     [
@@ -285,7 +282,7 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
                     <View
                       style={[
                         styles.themeColorCircle,
-                        { backgroundColor: option.color },
+                        { backgroundColor: option.color === 'default' ? (scheme === 'dark' ? '#000000' : '#FFFFFF') : option.color },
                         themeColor === option.color && styles.themeColorCircleSelected,
                       ]}
                     />
@@ -326,7 +323,7 @@ const makeStyles = (theme: any) =>
   StyleSheet.create({
     root: {
       flex: 1,
-      backgroundColor: theme.surface,
+      backgroundColor: theme.background,
     },
     topSection: {
       padding: 16,
@@ -346,8 +343,12 @@ const makeStyles = (theme: any) =>
       resizeMode: "cover",
     },
     themeToggle: {
-      paddingRight: 4,
+      padding: 12,
+      paddingRight: 16,
       borderRadius: 8,
+      margin: -8,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     userInfo: {
       marginTop: 12,
@@ -401,7 +402,7 @@ const makeStyles = (theme: any) =>
     footer: {
       padding: 12,
       borderTopWidth: 0.5,
-      borderTopColor: theme.primary,
+      borderTopColor: theme.background,
     },
     loginLogoutButton: {
       flexDirection: "row",

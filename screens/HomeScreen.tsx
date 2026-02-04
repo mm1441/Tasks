@@ -49,7 +49,7 @@ type HomeScreenProps = {
 };
 
 type SortOption = 'custom' | 'dueDateAsc' | 'dueDateDesc' | 'createdAtAsc' | 'createdAtDesc' | null;
-const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const {
@@ -80,7 +80,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const gradientTheme = useMemo(() => {
     const bases = getGradientThemeBases(themeColor);
     const base = scheme === 'dark' ? bases.dark : bases.light;
-    return generateThemeColors(base);
+    return generateThemeColors(base, scheme);
   }, [scheme, themeColor]);
 
   const [sortOption, setSortOption] = useState<SortOption>('dueDateAsc');
@@ -400,7 +400,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const renderDragListItem = (info: DragListRenderItemInfo<typeof tasks[0]>) => {
     const { item, onDragStart, onDragEnd, isActive } = info;
     const stableIndex = getStableIndex(displayedTasks, item.id);
-    const backgroundColor = gradientTheme.getItemColor(stableIndex, displayedTasks.length);
+    const getCardBackgroundColor = (stableIndex: number, totalCount: number): string | undefined => {
+      if (themeColor === 'default') return undefined;
+      return gradientTheme.getItemColor(stableIndex, totalCount);
+    };
+    const backgroundColor = getCardBackgroundColor(stableIndex, displayedTasks.length);
+    const isFirstInList = displayedTasks[0]?.id === item.id;
+    const isLastInList = displayedTasks[displayedTasks.length - 1]?.id === item.id;
     return (
       <TaskCard
         key={item.id}
@@ -413,13 +419,15 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           }
         }}
         onLongPress={() => toggleSelectTask(item.id)}
-        showDragHandle={true}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+        showDragHandle={!isSelectionMode}
+        onDragStart={isSelectionMode ? undefined : onDragStart}
+        onDragEnd={isSelectionMode ? undefined : onDragEnd}
         isActive={isActive}
         selected={selectedTaskIds.includes(item.id)}
         selectionMode={isSelectionMode}
         backgroundColor={backgroundColor}
+        isFirstInList={isFirstInList}
+        isLastInList={isLastInList}
       />
     );
   };
@@ -489,6 +497,22 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           else navigation.navigate('EditTask', { taskId: id });
         }}
         onLongPressTask={toggleSelectTask}
+        onClearCompleted={() => {
+          Alert.alert(
+            'Clear completed tasks',
+            'Move all completed tasks in this list to deleted?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Clear',
+                style: 'destructive',
+                onPress: () => {
+                  completedTasks.forEach((t) => deleteTask(t.id));
+                },
+              },
+            ]
+          );
+        }}
       />
       {showDeletedTasks && (
         <DeletedTasksFooter
@@ -519,7 +543,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         />
       )}
     </View>
-  ), [completedTasks, isSelectionMode, selectedTaskIds, toggleSelectTask, navigation, showDeletedTasks, deletedTasks, permanentlyDeleteTask]);
+  ), [completedTasks, isSelectionMode, selectedTaskIds, toggleSelectTask, navigation, showDeletedTasks, deletedTasks, permanentlyDeleteTask, deleteTask]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -530,9 +554,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         </View>
       )}
 
-      {/* Dim content and prevent interaction when modal busy */}
       <View style={{ flex: 1, opacity: syncModalBusy ? 0.5 : 1 }} pointerEvents={syncModalBusy ? 'none' : 'auto'}>
-        <View style={{ position: 'relative', zIndex: 10 }}>
+        <View style={{ paddingHorizontal: 16, position: 'relative', zIndex: 10 }}>
           {isSelectionMode ? (
             // ToDo: Extract context bar as component
             <View style={styles.contextBar}>
@@ -638,7 +661,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               keyExtractor={(it) => it.id}
               renderItem={renderDragListItem}
               onReordered={onReordered}
-              contentContainerStyle={[styles.listContent, { paddingBottom: 24 }]}
+              contentContainerStyle={styles.listContent}
               ListFooterComponent={footers}
             />
           </View>
@@ -646,22 +669,33 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           <DueDateSectionList
             tasks={displayedTasks}
             selectedIds={selectedTaskIds}
+            selectionMode={isSelectionMode}
             onPress={(id: string) => {
-              if (isSelectionMode) toggleSelectTask(id);
-              else navigation.navigate('EditTask', { taskId: id });
+              if (selectedTaskIds.length > 0) {
+                toggleSelectTask(id);
+                return;
+              }
+              navigation.navigate('EditTask', { taskId: id });
             }}
             onLongPress={(id: string) => toggleSelectTask(id)}
             ListFooterComponent={footers}
-            contentContainerStyle={{ paddingBottom: 24 }}
+            contentContainerStyle={styles.listContent}
           />
         ) : (
           <FlatList
             data={displayedTasks}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.listContent, { paddingBottom: 24 }]}
-            renderItem={({ item }) => {
+            extraData={displayedTasks}
+            contentContainerStyle={styles.listContent}
+            renderItem={({ item, index }) => {
               const stableIndex = getStableIndex(displayedTasks, item.id);
-              const backgroundColor = gradientTheme.getItemColor(stableIndex, displayedTasks.length);
+              const getCardBackgroundColor = (stableIndex: number, totalCount: number): string | undefined => {
+                if (themeColor === 'default') return undefined;
+                return gradientTheme.getItemColor(stableIndex, totalCount);
+              };
+              const backgroundColor = getCardBackgroundColor(stableIndex, displayedTasks.length);
+              const isFirstInList = index === 0;
+              const isLastInList = index === displayedTasks.length - 1;
               return (
                 <TaskCard
                   item={item}
@@ -676,6 +710,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   selected={selectedTaskIds.includes(item.id)}
                   selectionMode={isSelectionMode}
                   backgroundColor={backgroundColor}
+                  isFirstInList={isFirstInList}
+                  isLastInList={isLastInList}
                 />
               );
             }}
@@ -749,10 +785,10 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
             <View style={{ minHeight: 120, maxHeight: 360 }}>
               {syncModalMessages.length === 0 ? (
-                <Text style={{ color: theme.muted }}>Waiting for progress...</Text>
+                <Text style={{ color: theme.text }}>Waiting for progress...</Text>
               ) : (
                 syncModalMessages.map((m, idx) => (
-                  <Text key={idx} style={{ marginVertical: 4 }}>{m}</Text>
+                  <Text key={idx} style={{ marginVertical: 4, color: theme.text }}>{m}</Text>
                 ))
               )}
             </View>
@@ -855,14 +891,14 @@ const makeStyles = (theme: any) =>
     },
 
     contextBar: {
-      height: 56,
-      backgroundColor: theme.surface,
+      height: 64,
+      backgroundColor: theme.background,
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: theme.border,
-      elevation: 4,
+      fontSize: 14,
+
     },
 
     contextIcon: {
@@ -882,7 +918,7 @@ const makeStyles = (theme: any) =>
 
     contextText: {
       marginLeft: 6,
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: '500',
       color: theme.text,
     },
@@ -896,6 +932,8 @@ const makeStyles = (theme: any) =>
       fontWeight: '600',
     },
     listContent: {
+      paddingTop: 16,
+      paddingBottom: SCREEN_HEIGHT * 0.15,
     },
     taskCard: {
       backgroundColor: theme.surface,
@@ -934,8 +972,8 @@ const makeStyles = (theme: any) =>
     },
     addButton: {
       position: 'absolute',
-      right: width * 0.15,
-      bottom: SCREEN_HEIGHT * 0.1,
+      right: SCREEN_WIDTH * 0.1,
+      bottom: SCREEN_HEIGHT * 0.05,
       width: 56,
       height: 56,
       borderRadius: 28,
@@ -977,7 +1015,7 @@ const makeStyles = (theme: any) =>
 
     modalBackdrop: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
+      backgroundColor: theme.background,
       justifyContent: 'center',
       padding: 20,
     },
@@ -1000,7 +1038,7 @@ const makeStyles = (theme: any) =>
     modalButton: { paddingVertical: 8, paddingHorizontal: 12 },
     modalPrimary: { backgroundColor: theme.primary, borderRadius: 8, marginLeft: 8 },
     modalButtonText: { color: theme.text, fontWeight: '600' },
-    modalPrimaryText: { color: '#fff' },
+    modalPrimaryText: { color: theme.text },
     modalOverlay: {
       flex: 1,
       backgroundColor: theme.overlay,

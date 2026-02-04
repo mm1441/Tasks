@@ -16,22 +16,25 @@ export type GeneratedTheme = {
  * Generates theme colors with stable color assignment.
  * Colors are based on a stable index (e.g., creation order) rather than
  * current position, preventing color jumps when tasks are reordered.
- * 
+ *
  * @param base - Base HSL color (e.g., { h: 188, s: 100, l: 36 })
+ * @param scheme - 'light' or 'dark'; light uses 90% lightness for background, dark uses 10%
  * @returns Theme with background color and item color generator
  */
-export function generateThemeColors(base: ThemeColor): GeneratedTheme {
-  // Background color: same H, S, but L = 20, full opacity
-  const background = `hsl(${base.h}, ${base.s}%, 20%)`;
+export function generateThemeColors(base: ThemeColor, scheme: 'light' | 'dark'): GeneratedTheme {
+  const background =
+    scheme === 'light'
+      ? `hsl(${base.h}, ${base.s}%, 90%)`
+      : `hsl(${base.h}, ${base.s}%, 10%)`;
 
   /**
    * Generates item color based on stable index.
-   * Opacity ramps from 1 (first item) to a minimum of 0.3 (last item).
+   * Opacity ramps from 1 (first item) to a minimum of 0.2 (last item).
    * 
    * Rules:
    * - First element is always 100% opacity (alpha = 1)
-   * - If totalCount <= 7: opacity decreases by 10% per step
-   * - If totalCount > 7: last element is 30% opacity (alpha = 0.3), 
+   * - If totalCount <= 7: opacity decreases by 10% per step 
+   * - If totalCount > 7: last element is 30% opacity (alpha = 0.2), 
    *   with linear interpolation between first and last
    * 
    * @param stableIndex - Stable index (0-based, e.g., based on creation order)
@@ -51,16 +54,24 @@ export function generateThemeColors(base: ThemeColor): GeneratedTheme {
     let minAlpha: number;
     let step: number;
 
-    if (totalCount <= 7) {
-      // For 7 or fewer items: decrease by 10% per step
-      // minAlpha = 1 - (totalCount - 1) * 0.1
-      minAlpha = 1 - (totalCount - 1) * 0.1;
-      step = 0.1;
+    minAlpha = 0.2;
+
+    if (totalCount === 2) {
+      step = 0.3;
     } else {
-      // For more than 7 items: last element is 30% opacity
-      minAlpha = 0.3;
       step = (maxAlpha - minAlpha) / (totalCount - 1);
     }
+
+    // if (totalCount <= 7) {
+    //   // For 7 or fewer items: decrease by 10% per step
+    //   // minAlpha = 1 - (totalCount - 1) * 0.05
+    //   minAlpha = 1 - (totalCount - 1) * 0.1;
+    //   step = 0.1;
+    // } else {
+    //   // For more than 7 items: last element is 30% opacity
+    //   minAlpha = 0.2;
+    //   step = (maxAlpha - minAlpha) / (totalCount - 1);
+    // }
     
     // Clamp index to valid range
     const clampedIndex = Math.max(0, Math.min(stableIndex, totalCount - 1));
@@ -97,7 +108,7 @@ export function getStableIndex(tasks: Array<{ id: string }>, taskId: string): nu
 
 /**
  * Converts a hex color to HSL
- * @param hex - Hex color string (e.g., "#09b895" or "09b895")
+ * @param hex - Hex color string
  * @returns HSL color object
  */
 export function hexToHsl(hex: string): ThemeColor {

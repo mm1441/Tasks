@@ -1,13 +1,13 @@
 // context/ThemeContext.tsx
 import { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getThemeColors, type AppTheme } from '../theme/colors';
+import { getThemeColors, type AppTheme, type ThemeColorOption } from '../theme/colors';
 import type { ReactNode } from 'react';
 
 const STORAGE_KEY = '@app_theme'; // stores 'light' or 'dark'
-const THEME_COLOR_STORAGE_KEY = '@app_theme_color'; // stores theme color hex
+const THEME_COLOR_STORAGE_KEY = '@app_theme_color'; // stores theme color hex or 'default'
 
-export type ThemeColorOption = '#09b895' | '#2a84f1' | '#c2791d';
+export type { ThemeColorOption };
 
 type ThemeContextValue = {
   theme: AppTheme;
@@ -22,7 +22,7 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [scheme, setSchemeState] = useState<'light' | 'dark'>('light'); // default
-  const [themeColor, setThemeColorState] = useState<ThemeColorOption>('#2a84f1'); // default
+  const [themeColor, setThemeColorState] = useState<ThemeColorOption>('default'); // default
   const theme = useMemo(() => getThemeColors(scheme, themeColor), [scheme, themeColor]);
 
   useEffect(() => {
@@ -39,7 +39,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
         
         const storedColor = await AsyncStorage.getItem(THEME_COLOR_STORAGE_KEY);
-        if (storedColor && (storedColor === '#09b895' || storedColor === '#2a84f1' || storedColor === '#c2791d')) {
+        const validColors: readonly ThemeColorOption[] = ['default', '#09b895', '#0084FF', '#c2791d'];
+        if (storedColor && (validColors as readonly string[]).includes(storedColor)) {
           setThemeColorState(storedColor as ThemeColorOption);
         }
       } catch (e) {

@@ -24,7 +24,7 @@ interface TaskContextType {
   showDeletedTasks: boolean;
   setShowDeletedTasks: (value: boolean | ((prev: boolean) => boolean)) => void;
   addTask: (task: Omit<Task, "id" | "createdAt" | "lastModified">) => Promise<void>;
-  updateTask: (task: Task) => void;
+  updateTask: (task: Task) => Promise<void>;
   deleteTask: (id: string) => void;
   permanentlyDeleteTask: (id: string) => void;
   reorderTasks: (newTasks: Task[]) => void;
@@ -157,21 +157,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         // Store in shared preferences via native module (Android)
         const tasksJson = JSON.stringify(tasksData);
         const taskListsJson = JSON.stringify(taskListsData);
-        
-        WidgetStorage.setTasks(tasksJson);
-        WidgetStorage.setTaskLists(taskListsJson);
-        if (currentTaskListId) {
-          WidgetStorage.setCurrentTaskListId(currentTaskListId);
-        }
-        // Force widget update to refresh the UI
-        WidgetStorage.updateWidget();
-        
-        // Also trigger a widget refresh after a short delay to ensure data is written
-        setTimeout(() => {
-          if (WidgetStorage && WidgetStorage.updateWidget) {
-            WidgetStorage.updateWidget();
-          }
-        }, 100);
+        const listId = currentTaskListId ?? "";
+        // Atomic write + update: ensures widget reads new data before refresh (avoids bridge async ordering)
+        WidgetStorage.setAllAndUpdateWidget(tasksJson, taskListsJson, listId);
 
         // Also store in SharedGroupPreferences for iOS compatibility 
         if (Platform.OS === "ios") {
@@ -376,7 +364,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const reorderTasks = (newTasks: Task[]) => setTasks(newTasks);
+  const reorderTasks = (newOrderedSegment: Task[]) =>
+    setTasks((prev) => {
+      const segmentIds = new Set(newOrderedSegment.map((t) => t.id));
+      const rest = prev.filter((t) => !segmentIds.has(t.id));
+      return [...newOrderedSegment, ...rest];
+    });
 
   const deleteTask = (id: string) => {
     const task = tasks.find(t => t.id === id);

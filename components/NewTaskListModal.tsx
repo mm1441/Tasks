@@ -140,7 +140,7 @@ const makeStyles = (theme: any, insets: any) =>
       justifyContent: 'flex-end', // keep modal anchored bottom
     },
     card: {
-      backgroundColor: theme.surface,
+      backgroundColor: theme.background,
       borderTopLeftRadius: 16,
       borderTopRightRadius: 16,
       padding: 20,
@@ -170,7 +170,7 @@ const makeStyles = (theme: any, insets: any) =>
       paddingHorizontal: 12,
       paddingVertical: 12,
       marginBottom: 16,
-      backgroundColor: theme.background,
+      backgroundColor: theme.surface,
       color: theme.text,
       fontSize: 16,
     },

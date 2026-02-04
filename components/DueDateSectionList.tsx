@@ -37,26 +37,33 @@ export default function DueDateSectionList({
   const styles = makeStyles(theme);
   const sections: Section[] = buildDueDateSections(tasks);
   
-  // Generate theme colors for gradient effect (theme-specific)
   const gradientTheme = useMemo(() => {
     const bases = getGradientThemeBases(themeColor);
     const base = scheme === 'dark' ? bases.dark : bases.light;
-    return generateThemeColors(base);
+    return generateThemeColors(base, scheme);
   }, [scheme, themeColor]);
+
+  const getCardBackgroundColor = (stableIndex: number, totalCount: number): string | undefined => {
+    if (themeColor === 'default') return undefined;
+    return gradientTheme.getItemColor(stableIndex, totalCount);
+  };
 
   return (
     <SectionList
       sections={sections}
       keyExtractor={(item) => item.id}
+      extraData={tasks}
       ListFooterComponent={ListFooterComponent}
       contentContainerStyle={[styles.listContent, contentContainerStyle]}
       renderSectionHeader={({ section }) => (
         <Text style={styles.sectionTitle}>{section.title}</Text>
       )}
-      renderItem={({ item }) => {
+      renderItem={({ item, index, section }) => {
         // Calculate stable index based on all tasks (not just section)
         const stableIndex = getStableIndex(tasks, item.id);
-        const backgroundColor = gradientTheme.getItemColor(stableIndex, tasks.length);
+        const backgroundColor = getCardBackgroundColor(stableIndex, tasks.length);
+        const isFirstInList = index === 0;
+        const isLastInList = index === section.data.length - 1;
         return (
           <TaskCard
             item={item}
@@ -66,6 +73,8 @@ export default function DueDateSectionList({
             selected={selectedIds.includes(item.id)}
             selectionMode={selectionMode}
             backgroundColor={backgroundColor}
+            isFirstInList={isFirstInList}
+            isLastInList={isLastInList}
           />
         );
       }}
@@ -82,8 +91,9 @@ const makeStyles = (theme: any) =>
       fontSize: 14,
       fontWeight: '600',
       color: theme.primary,
-      marginTop: 16,
-      marginBottom: 8,
-      padding: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      marginTop: 20,
+      marginBottom: 4,
     },
   });

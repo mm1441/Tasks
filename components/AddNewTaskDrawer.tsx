@@ -53,6 +53,8 @@ export default function AddNewTaskDrawer({
     }
   }, [visible, translateY]);
 
+  const isSaveDisabled = !title.trim();
+
   useEffect(() => {
     const onKeyboardShow = (e: KeyboardEvent) => {
       const height = e.endCoordinates?.height ?? 0;
@@ -138,7 +140,7 @@ export default function AddNewTaskDrawer({
             left: 0,
             right: 0,
             zIndex: 11,
-            backgroundColor: theme.surface,
+            backgroundColor: theme.background,
             borderTopLeftRadius: 25,
             borderTopRightRadius: 25,
             overflow: 'hidden',
@@ -150,7 +152,7 @@ export default function AddNewTaskDrawer({
           style={{
             paddingHorizontal: 16,
             paddingTop: 12,
-            paddingBottom: insets.bottom + 16,
+            paddingBottom: insets.bottom,
           }}
         >
           <View style={styles.header}>
@@ -231,15 +233,29 @@ export default function AddNewTaskDrawer({
           {/* Action Buttons */}
           <View style={styles.buttonRow}>
             <Pressable style={styles.modalButton} onPress={onClose}>
-              <Text style={styles.modalButtonText}>Cancel</Text>
+              <Text style={[styles.modalButtonText, { color: theme.text }]}>Cancel</Text>
             </Pressable>
-
+          
             <Pressable
-              style={[styles.modalButton, styles.modalPrimary, { marginLeft: 8 }]}
+              style={[
+                styles.modalButton,
+                {
+                  marginLeft: 8,
+                  backgroundColor: isSaveDisabled ? theme.muted : theme.primary,
+                  opacity: isSaveDisabled ? 0.6 : 1,
+                },
+              ]}
               onPress={handleSave}
-              disabled={!title.trim()}
+              disabled={isSaveDisabled}
             >
-              <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Save</Text>
+              <Text
+                style={[
+                  styles.modalButtonText,
+                  isSaveDisabled && { opacity: 0.9 },
+                ]}
+              >
+                Save
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -271,10 +287,10 @@ const makeStyles = (theme: any) =>
     titleInput: {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: theme.border,
+      backgroundColor: theme.surface,
       borderRadius: 8,
       paddingHorizontal: 12,
       paddingVertical: 12,
-      backgroundColor: theme.background,
       color: theme.text,
       fontSize: 16,
       marginBottom: 12,
@@ -290,7 +306,7 @@ const makeStyles = (theme: any) =>
       paddingVertical: 8,
       paddingHorizontal: 12,
       borderRadius: 8,
-      backgroundColor: theme.background,
+      backgroundColor: theme.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: theme.border,
       gap: 6,
@@ -315,6 +331,7 @@ const makeStyles = (theme: any) =>
     },
     descriptionContainer: {
       marginBottom: 12,
+      
     },
     descriptionInput: {
       borderWidth: StyleSheet.hairlineWidth,
@@ -322,7 +339,7 @@ const makeStyles = (theme: any) =>
       borderRadius: 8,
       paddingHorizontal: 12,
       paddingVertical: 10,
-      backgroundColor: theme.background,
+      backgroundColor: theme.surface,
       color: theme.text,
       fontSize: 14,
       minHeight: 80,
@@ -338,15 +355,10 @@ const makeStyles = (theme: any) =>
       paddingHorizontal: 16,
       borderRadius: 8,
     },
-    modalPrimary: {
-      backgroundColor: theme.primary,
-    },
     modalButtonText: {
-      color: theme.text,
+      color: theme.background,
       fontWeight: '600',
       fontSize: 16,
-    },
-    modalPrimaryText: {
-      color: theme.primary,
+  
     },
   });

@@ -13,6 +13,7 @@ interface Props {
   selectedTaskIds: string[];
   onPressTask: (id: string) => void;
   onLongPressTask: (id: string) => void;
+  onClearCompleted?: () => void;
 }
 
 export default function CompletedTasksFooter({
@@ -21,17 +22,23 @@ export default function CompletedTasksFooter({
   selectedTaskIds,
   onPressTask,
   onLongPressTask,
+  onClearCompleted,
 }: Props) {
   const { theme, scheme, themeColor } = useTheme();
-  const styles = makeStyles(theme);
+  const styles = makeStyles(theme, scheme);
   const [open, setOpen] = useState(false);
 
   // Generate theme colors for gradient effect (separate gradient for completed tasks, theme-specific)
   const gradientTheme = useMemo(() => {
     const bases = getGradientThemeBases(themeColor);
     const base = scheme === 'dark' ? bases.dark : bases.light;
-    return generateThemeColors(base);
+    return generateThemeColors(base, scheme);
   }, [scheme, themeColor]);
+
+  const getCardBackgroundColor = (stableIndex: number, totalCount: number): string | undefined => {
+    if (themeColor === 'default') return undefined;
+    return gradientTheme.getItemColor(stableIndex, totalCount);
+  };
 
   // Auto-open when tasks appear
   useEffect(() => {
@@ -65,10 +72,11 @@ export default function CompletedTasksFooter({
             data={tasks}
             keyExtractor={(t) => t.id}
             scrollEnabled={false}
-            renderItem={({ item }) => {
-              // Calculate stable index for completed tasks (separate gradient that restarts)
+            renderItem={({ item, index }) => {
               const stableIndex = getStableIndex(tasks, item.id);
-              const backgroundColor = gradientTheme.getItemColor(stableIndex, tasks.length);
+              const backgroundColor = getCardBackgroundColor(stableIndex, tasks.length);
+              const isFirstInList = index === 0;
+              const isLastInList = index === tasks.length - 1;
               return (
                 <TaskCard
                   item={item}
@@ -78,30 +86,58 @@ export default function CompletedTasksFooter({
                   selected={selectedTaskIds.includes(item.id)}
                   selectionMode={isSelectionMode}
                   backgroundColor={backgroundColor}
+                  isFirstInList={isFirstInList}
+                  isLastInList={isLastInList}
                 />
               );
             }}
           />
+          {onClearCompleted && (
+            <Pressable
+              style={({ pressed }) => [styles.clearButton, pressed && { opacity: 0.8 }]}
+              onPress={onClearCompleted}
+            >
+              <Ionicons name="trash-outline" size={16} color={theme.text} />
+              <Text style={styles.clearButtonText}>Clear ALL completed tasks</Text>
+            </Pressable>
+          )}
         </View>
       )}
     </View>
   );
 }
 
-const makeStyles = (theme: any) =>
+const makeStyles = (theme: any, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: 16,
-      height: 48,
-
+      marginTop: 10,
+      height: 40,
     },
     title: {
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: '600',
-      color: theme.text,
+      color: theme.primary,
+    },
+    clearButton: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginHorizontal: 16,
+      paddingVertical: 12,
+      marginTop: 16,
+      borderRadius: 8,
+      backgroundColor: scheme === 'dark' ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.1)',
+    },
+    clearButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: scheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)',
     },
   });
 

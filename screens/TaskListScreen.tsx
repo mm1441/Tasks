@@ -13,14 +13,21 @@ import {
   Platform,
   Alert,
   Share,
+  Dimensions,
+  ActivityIndicator,
+  ToastAndroid,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBar } from '../components/TopBar';
 import { useTasks } from '../context/TaskContext';
 import { useTheme } from '../context/ThemeContext';
+import { useGoogleAuth } from '../context/GoogleAuthContext';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import NewTaskListModal from '../components/NewTaskListModal';
 
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function TaskListsScreen({ navigation }) {
   const {
@@ -32,12 +39,23 @@ export default function TaskListsScreen({ navigation }) {
     setCurrentTaskList,
     updateTaskList,
     deleteTaskList,
-    deleteTask
+    deleteTask,
+    downloadFromGoogle,
+    uploadToGoogle,
   } = useTasks();
   const { theme } = useTheme();
+  const { getAccessToken, signIn } = useGoogleAuth();
+  const { isOnline } = useNetworkStatus();
   const styles = makeStyles(theme);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
+
+  // Sync modal state (same as HomeScreen)
+  const [syncModalVisible, setSyncModalVisible] = useState(false);
+  const [syncModalMessages, setSyncModalMessages] = useState<string[]>([]);
+  const [syncModalError, setSyncModalError] = useState<string | null>(null);
+  const [syncModalBusy, setSyncModalBusy] = useState(false);
+  const lastSyncActionRef = useRef<(() => Promise<void>) | null>(null);
 
 
   const displayedTaskLists = useMemo(() => {
@@ -57,6 +75,139 @@ export default function TaskListsScreen({ navigation }) {
     addTaskList({ title });
     // scroll to end so the new item is visible (since context appends)
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+  };
+
+  const performWithToken = async (action: (token: string, progress?: (msg: string) => void) => Promise<void>) => {
+    if (!isOnline) {
+      Alert.alert('Offline', 'Connect to internet to sync.');
+      return;
+    }
+    try {
+      let token = await getAccessToken();
+      if (!token) {
+        const doSignIn = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Sign In Required',
+            'Please sign in with Google to sync your tasks.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Sign In', onPress: () => resolve(true) },
+            ],
+            { cancelable: true }
+          );
+        });
+        if (!doSignIn) return;
+        try {
+          await signIn();
+        } catch {
+          Alert.alert('Error', 'Sign-in failed');
+          return;
+        }
+        token = await getAccessToken();
+      }
+      if (!token) {
+        Alert.alert('Error', 'Failed to obtain access token');
+        return;
+      }
+      await action(token);
+    } catch (err) {
+      console.error('performWithToken error', err);
+      Alert.alert('Error', err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const startDownload = async () => {
+    setSyncModalMessages([]);
+    setSyncModalError(null);
+    setSyncModalVisible(true);
+    setSyncModalBusy(true);
+    lastSyncActionRef.current = async () => {
+      await performWithToken(async (token) => {
+        const onProgress = (msg: string) => setSyncModalMessages((prev) => [...prev, msg]);
+        try {
+          await downloadFromGoogle(token, onProgress);
+          const successText = 'Download completed';
+          if (Platform.OS === 'android') ToastAndroid.show(successText, ToastAndroid.SHORT);
+        } catch (e) {
+          const errText = e instanceof Error ? e.message : String(e);
+          setSyncModalError(errText);
+          if (Platform.OS === 'android') ToastAndroid.show('Download failed', ToastAndroid.SHORT);
+        }
+      });
+    };
+    try {
+      await lastSyncActionRef.current?.();
+    } finally {
+      setSyncModalBusy(false);
+    }
+  };
+
+  const startUpload = async () => {
+    setSyncModalMessages([]);
+    setSyncModalError(null);
+    setSyncModalVisible(true);
+    setSyncModalBusy(true);
+    lastSyncActionRef.current = async () => {
+      await performWithToken(async (token) => {
+        const onProgress = (msg: string) => setSyncModalMessages((prev) => [...prev, msg]);
+        try {
+          await uploadToGoogle(token, onProgress);
+          const successText = 'Upload completed';
+          if (Platform.OS === 'android') ToastAndroid.show(successText, ToastAndroid.SHORT);
+        } catch (e) {
+          const errText = e instanceof Error ? e.message : String(e);
+          setSyncModalError(errText);
+          if (Platform.OS === 'android') ToastAndroid.show('Upload failed', ToastAndroid.SHORT);
+        }
+      });
+    };
+    try {
+      await lastSyncActionRef.current?.();
+    } finally {
+      setSyncModalBusy(false);
+    }
+  };
+
+  const startDownloadThenUpload = async () => {
+    setSyncModalMessages([]);
+    setSyncModalError(null);
+    setSyncModalVisible(true);
+    setSyncModalBusy(true);
+    lastSyncActionRef.current = async () => {
+      await performWithToken(async (token) => {
+        const onProgress = (msg: string) => setSyncModalMessages((prev) => [...prev, msg]);
+        try {
+          await downloadFromGoogle(token, onProgress);
+          setSyncModalMessages((prev) => [...prev, 'Download finished — starting upload...']);
+          await uploadToGoogle(token, onProgress);
+          const successText = 'Download and upload completed';
+          if (Platform.OS === 'android') ToastAndroid.show(successText, ToastAndroid.SHORT);
+        } catch (e) {
+          const errText = e instanceof Error ? e.message : String(e);
+          setSyncModalError(errText);
+          if (Platform.OS === 'android') ToastAndroid.show('Sync failed', ToastAndroid.SHORT);
+        }
+      });
+    };
+    try {
+      await lastSyncActionRef.current?.();
+    } finally {
+      setSyncModalBusy(false);
+    }
+  };
+
+  const handleSyncOptions = () => {
+    Alert.alert(
+      'Sync with Google',
+      'Choose an action for this task list:',
+      [
+        { text: 'Download from Google', onPress: startDownload },
+        { text: 'Upload to Google', onPress: startUpload },
+        { text: 'Download then Upload', onPress: startDownloadThenUpload },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true }
+    );
   };
 
   const shareTaskList = async () => {
@@ -127,16 +278,8 @@ export default function TaskListsScreen({ navigation }) {
         title="Task Lists"
         leftIcon={<Ionicons name="chevron-back" size={26} color={theme.text} />}
         onLeftIconPress={() => (navigation?.goBack ? navigation.goBack() : null)}
-        // rightIcon1={<Ionicons name="search" size={24} color={theme.text} />}
-        // onRightIcon1Press={() => {
-        //   // hook up search UI
-        //   console.log('search pressed');
-        // }}
-        // rightIcon2={<Ionicons name="filter" size={24} color={theme.text}/>}
-        // onRightIcon2Press={() => {
-        //   // hook up filter UI
-        //   console.log('filter pressed');
-        // }}
+        rightIcon1={<Ionicons name="sync" size={24} color={theme.name === 'dark' ? '#FFF' : theme.primary} />}
+        onRightIcon1Press={handleSyncOptions}
       />
 
       <View style={styles.container}>
@@ -146,7 +289,7 @@ export default function TaskListsScreen({ navigation }) {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
-          contentContainerStyle={displayedTaskLists.length === 0 ? styles.emptyContainer : undefined}
+          contentContainerStyle={[displayedTaskLists.length === 0 ? styles.emptyContainer : styles.listContent]}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>No lists yet</Text>
@@ -162,7 +305,7 @@ export default function TaskListsScreen({ navigation }) {
           onPress={handleAddPress}
           accessibilityLabel="Add task list"
         >
-          <Ionicons name="add" size={28} color={theme.text} />
+          <Ionicons name="add" size={28} color={"#FFF"} />
         </TouchableOpacity>
 
         {/* Add modal */}
@@ -171,6 +314,69 @@ export default function TaskListsScreen({ navigation }) {
           onClose={() => setModalVisible(false)}
           onSubmit={handleAddList}
         />
+
+        {/* Full-screen Sync Modal (same as HomeScreen) */}
+        <Modal
+          visible={syncModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => {
+            if (!syncModalBusy) setSyncModalVisible(false);
+          }}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={[styles.modalTitle, { marginBottom: 8 }]}>Sync with Google</Text>
+
+              <View style={{ minHeight: 120, maxHeight: 360 }}>
+                {syncModalMessages.length === 0 ? (
+                  <Text style={{ color: theme.text }}>Waiting for progress...</Text>
+                ) : (
+                  syncModalMessages.map((m, idx) => (
+                    <Text key={idx} style={{ marginVertical: 4, color: theme.text }}>{m}</Text>
+                  ))
+                )}
+              </View>
+
+              {syncModalError && (
+                <View style={{ marginTop: 8 }}>
+                  <Text style={{ color: '#FF3B30', marginBottom: 8 }}>Error: {syncModalError}</Text>
+                </View>
+              )}
+
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
+                {!syncModalBusy && (
+                  <Pressable style={styles.modalButton} onPress={() => setSyncModalVisible(false)}>
+                    <Text style={styles.modalButtonText}>Close</Text>
+                  </Pressable>
+                )}
+
+                {syncModalBusy && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <ActivityIndicator size="small" />
+                    <Text style={{ marginLeft: 8, color: theme.text }}>Working…</Text>
+                  </View>
+                )}
+
+                {!syncModalBusy && syncModalError && (
+                  <Pressable
+                    style={[styles.modalButton, styles.modalPrimary]}
+                    onPress={() => {
+                      if (lastSyncActionRef.current) {
+                        setSyncModalMessages([]);
+                        setSyncModalError(null);
+                        setSyncModalBusy(true);
+                        lastSyncActionRef.current().finally(() => setSyncModalBusy(false));
+                      }
+                    }}
+                  >
+                    <Text style={[styles.modalButtonText, styles.modalPrimaryText]}>Retry</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         {selectedListId && (
           <Modal
@@ -265,10 +471,17 @@ export default function TaskListsScreen({ navigation }) {
 
 const makeStyles = (theme: any) =>
   StyleSheet.create({
-    safe: { flex: 1, backgroundColor: theme.background },
-
-    container: { flex: 1 },
-
+    safe: { 
+      flex: 1, 
+      backgroundColor: theme.background,
+    },
+    container: { 
+      flex: 1,
+      padding: 16,
+    },
+    listContent: {
+      paddingBottom: SCREEN_HEIGHT * 0.15,
+    },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -288,12 +501,13 @@ const makeStyles = (theme: any) =>
 
     fab: {
       position: 'absolute',
-      right: 20,
-      bottom: 28,
+      right: SCREEN_WIDTH * 0.1,
+      bottom: SCREEN_HEIGHT * 0.05,
       width: 56,
       height: 56,
       borderRadius: 28,
       backgroundColor: theme.primary,
+      color: "#ffffff",
       justifyContent: 'center',
       alignItems: 'center',
       // shadow
@@ -308,6 +522,7 @@ const makeStyles = (theme: any) =>
       backgroundColor: theme.overlay,
       justifyContent: 'center',
       padding: 20,
+      color: theme.primary,
     },
 
     actionSheet: {
@@ -350,5 +565,27 @@ const makeStyles = (theme: any) =>
       fontSize: 16,
       color: theme.text,
     },
+
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: theme.background,
+      justifyContent: 'center',
+      padding: 20,
+    },
+    modalCard: {
+      backgroundColor: theme.surface,
+      borderRadius: 12,
+      padding: 16,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginBottom: 12,
+      color: theme.text,
+    },
+    modalButton: { paddingVertical: 8, paddingHorizontal: 12 },
+    modalPrimary: { backgroundColor: theme.primary, borderRadius: 8, marginLeft: 8 },
+    modalButtonText: { color: theme.text, fontWeight: '600' },
+    modalPrimaryText: { color: theme.text },
 
   });

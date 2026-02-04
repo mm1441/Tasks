@@ -1,111 +1,122 @@
 // theme/colors.ts
 import type { ThemeColor } from '../utils/themeColors';
 import { hexToHsl, hslToHex } from '../utils/themeColors';
-import type { ThemeColorOption } from '../context/ThemeContext';
+
+export type ThemeColorOption = 'default' | '#00ba95' | '#0084FF' | '#c2791d';
+
+export const THEME_COLOR_OPTIONS: ReadonlyArray<{ color: ThemeColorOption; label: string }> = [
+  { color: 'default', label: 'Default' },
+  { color: '#00ba95', label: 'Teal' },
+  { color: '#0084FF', label: 'Blue' }, // Use #0084FF for dark, #99D1FF for light theme.
+  { color: '#c2791d', label: 'Orange' },
+];
 
 // Default theme colors (fallback)
 const defaultLight = {
   name: 'light',
   // Light bluish-gray background (e.g., hsl(210, 20%, 95%))
-  background: '#EAEFF6',
+  background: 'rgb(246, 247, 250)',
   // White surface for cards/modals
   surface: '#FFFFFF',
   // Vibrant pure blue for primary actions (e.g., hsl(205, 100%, 50%))
   primary: '#0084FF',
+  taskBackground: '#0084FF',
   // Dark gray/black for primary text
   text: '#333333',
   // Medium gray for inactive/secondary text
-  muted: '#999999',
+  muted: 'rgba(0, 0, 0, 0.5)',
+  dueDateText: 'rgba(0, 0, 0, 0.5)',
   // Light gray for borders
   border: '#E0E0E0',
   // Semi-transparent overlay
   overlay: 'rgba(0, 0, 0, 0.14)',
   // Very light gray for subtle backgrounds
   subtle: '#F5F5F5',
+  error: '#FF0000',
 };
 
 const defaultDark = {
   name: 'dark',
-  // Very dark blue/navy background (#002c33)
-  background: '#002c33',
-  // Very dark surface (darker than background)
-  surface: '#001F26',
+  background: '#252525',
+  surface: 'rgba(255, 255, 255, 0.04)',
   // Vibrant blue for primary actions (hsl(188, 100%, 36%)) 
-  primary: '#009fb8',
+  primary: '#0084FF',
+  taskBackground: '#0084FF',
   // White/very light gray for primary text
   text: '#F2F5F8',
   // Light gray for inactive/secondary text
-  muted: '#9AA4AF',
+  muted: 'rgba(255, 255, 255, 0.4)',
+  dueDateText: 'rgba(255, 255, 255, 0.6)',
   // Dark blue-gray for borders
-  border: '#1F2933',
+  border: 'rgb(66, 66, 66)',
   // Semi-transparent overlay
   overlay: 'rgba(0, 0, 0, 0.33)',
   // Very dark for subtle backgrounds
   subtle: '#000F14',
+  error: '#FF0000',
 };
 
 export type AppTheme = typeof defaultLight;
 
+export function getDefaultThemeColors(scheme: 'light' | 'dark'): AppTheme {
+  return scheme === 'dark' ? defaultDark : defaultLight;
+}
+
 /**
  * Generates theme colors based on scheme and selected theme color
  * @param scheme - 'light' or 'dark'
- * @param themeColorHex - Selected theme color hex (e.g., '#2a84f1')
+ * @param themeColorHex - Selected theme color hex
  * @returns AppTheme object with dynamically generated colors
  */
 export function getThemeColors(scheme: 'light' | 'dark', themeColorHex: ThemeColorOption): AppTheme {
-  // Convert hex to HSL
+  if (themeColorHex === 'default') {
+    return getDefaultThemeColors(scheme);
+  }
+
   const hsl = hexToHsl(themeColorHex);
-  
-  // Generate background color with L = 20
-  const backgroundHsl: ThemeColor = {
-    h: hsl.h,
-    s: hsl.s,
-    l: 20,
-  };
-  const backgroundHex = hslToHex(backgroundHsl);
-  
-  // For light theme: lighter background, darker text
-  // For dark theme: darker background, lighter text
+
   if (scheme === 'light') {
+    const lightBase: ThemeColor = {
+      h: hsl.h,
+      s: hsl.s,
+      l: Math.min(100, hsl.l + 30),
+    };
+    const lightBackgroundHsl: ThemeColor = {
+      h: hsl.h,
+      s: hsl.s,
+      l: 98,
+    };
     return {
-      name: 'light',
-      background:' #FFFFFF', // backgroundHex,
-      surface: '#FFFFFF',
-      primary: themeColorHex,
-      text: '#333333',
-      muted: '#999999',
-      border: '#E0E0E0',
-      overlay: 'rgba(0, 0, 0, 0.14)',
-      subtle: '#F5F5F5',
+      ...defaultLight,
+      background: hslToHex(lightBackgroundHsl),
+      primary: hslToHex(hsl),
+      // taskBackground: hslToHex(lightBase),
     };
   } else {
-    // For dark theme, make background even darker
+    const darkBase: ThemeColor = {
+      h: hsl.h,
+      s: hsl.s,
+      l: Math.max(0, hsl.l),
+    };
     const darkBackgroundHsl: ThemeColor = {
-      h: hsl.h,
-      s: hsl.s,
-      l: 15, // Even darker for dark mode
+      h: darkBase.h,
+      s: darkBase.s,
+      l: 8,
     };
-    const darkBackgroundHex = hslToHex(darkBackgroundHsl);
-    
     const darkSurfaceHsl: ThemeColor = {
-      h: hsl.h,
-      s: hsl.s,
-      l: 10, // Darker surface
+      h: darkBase.h,
+      s: darkBase.s,
+      l: 5,
     };
-    const darkSurfaceHex = hslToHex(darkSurfaceHsl);
-    
     return {
-      name: 'dark',
-      background: darkBackgroundHex,
-      surface: darkSurfaceHex,
-      primary: themeColorHex,
-      text: '#F2F5F8',
-      muted: '#9AA4AF',
-      border: '#1F2933',
-      overlay: 'rgba(0, 0, 0, 0.33)',
-      subtle: '#000F14',
+      ...defaultDark,
+      background: hslToHex(darkBackgroundHsl),
+      surface: hslToHex(darkSurfaceHsl),
+      primary: hslToHex(darkBase),
+      // taskBackground: hslToHex(darkBase),
     };
   }
+
 }
 
 // Legacy exports for backward compatibility
@@ -121,20 +132,24 @@ export function getGradientThemeBases(themeColorHex: ThemeColorOption): {
   light: ThemeColor;
   dark: ThemeColor;
 } {
+  if (themeColorHex === 'default') {
+    return {
+      light: gradientThemeBaseLight,
+      dark: gradientThemeBaseDark,
+    };
+  }
   const hsl = hexToHsl(themeColorHex);
   
-  // For light theme, use higher lightness (around 50%)
   const lightBase: ThemeColor = {
     h: hsl.h,
     s: hsl.s,
-    l: 50,
+    l: hsl.l + 33,
   };
   
-  // For dark theme, use lower lightness (around 36%)
   const darkBase: ThemeColor = {
     h: hsl.h,
     s: hsl.s,
-    l: 36,
+    l: hsl.l,
   };
   
   return {

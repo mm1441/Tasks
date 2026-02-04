@@ -4,9 +4,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
   Platform,
+  Alert,
 } from "react-native";
 import { useTasks } from "../context/TaskContext";
 import { useTheme } from "../context/ThemeContext";
@@ -15,6 +17,7 @@ import type { RouteProp } from "@react-navigation/native";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { RootStackParamList } from "../App";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 
 type EditTaskScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, "EditTask">;
@@ -26,9 +29,9 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
   console.log("[EditTaskScreen] Route params:", route.params);
   console.log("[EditTaskScreen] TaskId from route:", route.params.taskId);
   
-  const { tasks, taskLists = [], updateTask } = useTasks();
-  const { theme } = useTheme();
-  const styles = makeStyles(theme);
+  const { tasks, taskLists = [], updateTask, deleteTask } = useTasks();
+  const { theme, scheme } = useTheme();
+  const styles = makeStyles(theme, scheme);
   const taskId = route.params.taskId;
   
   console.log("[EditTaskScreen] TaskId variable:", taskId);
@@ -57,6 +60,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
   // Track completed state locally and show checkmark.
   const [isCompleted, setIsCompleted] = useState<boolean>(!!task?.isCompleted);
   const [showTaskListMenu, setShowTaskListMenu] = useState(false);
+  const [showDescriptionInput, setShowDescriptionInput] = useState<boolean>(!!task?.description);
 
   // Update state when taskId changes (when navigating to different task)
   // This is the primary effect that handles param changes
@@ -89,7 +93,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
     }
   }, [taskLists]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title.trim() || !task) return;
 
     const updatedTask = {
@@ -101,8 +105,19 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
       tasklistId: selectedTaskListId || undefined,
     };
 
-    updateTask(updatedTask);
+    await updateTask(updatedTask);
     navigation.goBack();
+  };
+
+  const handleDelete = () => {
+    if (!task) return;
+    Alert.alert("Delete Task", "Are you sure you want to delete this task?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => {
+        deleteTask(task.id);
+        navigation.goBack();
+      } },
+    ]);
   };
 
   const handleConfirm = (selectedDate: Date) => {
@@ -113,6 +128,17 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
     const hours = String(selectedDate.getHours()).padStart(2, "0");
     const minutes = String(selectedDate.getMinutes()).padStart(2, "0");
     setDueDate(`${year}-${month}-${day}T${hours}:${minutes}`);
+  };
+
+  const formatDueDate = (value?: string) => {
+    if (!value) return "";
+    const date = new Date(value);
+    return date.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   if (!task) {
@@ -138,39 +164,91 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
       <ScrollView style={styles.form}>
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Title *</Text>
-          <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Enter task title" placeholderTextColor={theme.muted} autoFocus />
-        </View>
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>
-            Description
-          </Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Enter description (optional)"
+            style={styles.input}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Enter task title"
             placeholderTextColor={theme.muted}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
+          />        
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Due Date & Time</Text>
-          <TouchableOpacity onPress={() => setShowPicker(true)}>
-            <View pointerEvents="none">
-              <TextInput
-                style={styles.input}
-                value={dueDate ? dueDate.replace("T", " ") : ""}
-                placeholder="Tap to select date & time (optional)"
-                placeholderTextColor={theme.muted}
-                editable={false}
+        {/* Compact actions row: description + due date */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => setShowDescriptionInput((prev) => !prev)}
+          >
+            <Ionicons
+              name={showDescriptionInput ? "document-text" : "document-text-outline"}
+              size={20}
+              color={showDescriptionInput ? theme.primary : theme.muted}
+            />
+          </TouchableOpacity>
+
+          <View style={[styles.iconButton, dueDate && styles.iconButtonExpanded]}>
+            <TouchableOpacity
+              style={styles.iconButtonContent}
+              onPress={() => setShowPicker(true)}
+            >
+              <Ionicons
+                name={dueDate ? "calendar" : "calendar-outline"}
+                size={20}
+                color={dueDate ? theme.primary : theme.muted}
               />
-            </View>
+              {dueDate ? (
+                <Text
+                  style={[styles.iconLabel, { color: theme.primary }]}
+                  numberOfLines={1}
+                >
+                  {formatDueDate(dueDate)}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
+            {dueDate && (
+              <TouchableOpacity
+                onPress={() => setDueDate(undefined)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={styles.clearButton}
+              >
+                <Ionicons name="close-circle" size={18} color={theme.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {showDescriptionInput && (
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Enter description (optional)"
+              placeholderTextColor={theme.muted}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </View>
+        )}
+
+
+        <View style={styles.inputGroup}>
+          <TouchableOpacity
+            style={styles.completedRow}
+            onPress={() => setIsCompleted((prev) => !prev)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: isCompleted }}
+          >
+            <Text style={styles.completedText}>Completed</Text>
+            <Ionicons
+              name={isCompleted ? "checkbox" : "square-outline"}
+              size={22}
+              color={isCompleted ? theme.primary : theme.muted}
+            />
           </TouchableOpacity>
         </View>
-
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Task List</Text>
@@ -178,9 +256,16 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
             style={styles.dropdown}
             onPress={() => setShowTaskListMenu((prev) => !prev)}
           >
-            <Text style={styles.dropdownText}>
-              {taskLists.find((l) => l.id === selectedTaskListId)?.title || "Select list"}
-            </Text>
+            <View style={styles.dropdownInner}>
+              <Text style={styles.dropdownText}>
+                {taskLists.find((l) => l.id === selectedTaskListId)?.title || "Select list"}
+              </Text>
+              <Ionicons
+                name={showTaskListMenu ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={theme.muted}
+              />
+            </View>
           </TouchableOpacity>
 
           {showTaskListMenu && (
@@ -205,18 +290,13 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
           )}
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Completed</Text>
-          <TouchableOpacity
-            style={styles.completedRow}
-            onPress={() => setIsCompleted((prev) => !prev)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: isCompleted }}
-          >
-            <Text style={styles.completedText}>{isCompleted ? "Completed" : "Mark as completed"}</Text>
-            <Text style={styles.checkmark}>{isCompleted ? "✓" : ""}</Text>
-          </TouchableOpacity>
-        </View>
+        <Pressable
+          style={({ pressed }) => [styles.deleteButton, pressed && { opacity: 0.8 }]}
+          onPress={handleDelete}
+        >
+          <Ionicons name="trash-outline" size={16} color={theme.text} />
+          <Text style={styles.deleteButtonText}>Delete task</Text>
+        </Pressable>
       </ScrollView>
 
       <DateTimePickerModal
@@ -231,7 +311,7 @@ export default function EditTaskScreen({ navigation, route }: EditTaskScreenProp
   );
 }
 
-const makeStyles = (theme: any) =>
+const makeStyles = (theme: any, scheme: 'light' | 'dark') =>
   StyleSheet.create({
     container: {
       flex: 1,
@@ -244,7 +324,7 @@ const makeStyles = (theme: any) =>
       paddingHorizontal: 16,
       paddingTop: 60,
       paddingBottom: 16,
-      backgroundColor: theme.surface,
+      backgroundColor: theme.background,
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
     },
@@ -253,6 +333,7 @@ const makeStyles = (theme: any) =>
       fontWeight: "600",
       color: theme.text,
     },
+
     cancelButton: {
       fontSize: 16,
       color: theme.primary,
@@ -300,8 +381,7 @@ const makeStyles = (theme: any) =>
       padding: 12,
       borderRadius: 10,
       backgroundColor: theme.surface,
-      borderWidth: 1,
-      borderColor: theme.border,
+
     },
     completedText: {
       color: theme.text,
@@ -316,8 +396,13 @@ const makeStyles = (theme: any) =>
       backgroundColor: theme.surface,
       borderRadius: 10,
       padding: 16,
-      borderWidth: 1,
+
       borderColor: theme.border,
+    },
+    dropdownInner: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
     },
     dropdownText: {
       fontSize: 16,
@@ -342,5 +427,56 @@ const makeStyles = (theme: any) =>
     dropdownItemText: {
       fontSize: 16,
       color: theme.text,
+    },
+    actionsRow: {
+      flexDirection: "row",
+      gap: 12,
+      marginBottom: 24,
+    },
+    iconButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      backgroundColor: theme.surface,
+      borderWidth: 1,
+      borderColor: theme.border,
+      gap: 6,
+      minWidth: 44,
+    },
+    iconButtonContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      flex: 1,
+    },
+    iconButtonExpanded: {
+      flex: 1,
+    },
+    iconLabel: {
+      fontSize: 14,
+      color: theme.muted,
+      flex: 1,
+    },
+    clearButton: {
+      marginLeft: 4,
+    },
+    deleteButton: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginHorizontal: 0,
+      paddingVertical: 12,
+      marginTop: 24,
+      borderRadius: 8,
+      backgroundColor: scheme === 'dark' ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.1)',
+    },
+    deleteButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: scheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)',
     },
   });
