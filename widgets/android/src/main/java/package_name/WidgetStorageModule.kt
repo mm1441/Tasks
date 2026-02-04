@@ -15,25 +15,43 @@ class WidgetStorageModule(
   fun setTasks(json: String) {
     val prefs = reactContext
       .getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-    prefs.edit().putString("tasks", json).apply()
+    prefs.edit().putString("tasks", json).commit()
   }
 
   @ReactMethod
   fun setTaskLists(json: String) {
     val prefs = reactContext
       .getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-    prefs.edit().putString("taskLists", json).apply()
+    prefs.edit().putString("taskLists", json).commit()
   }
 
   @ReactMethod
   fun setCurrentTaskListId(id: String) {
     val prefs = reactContext
       .getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-    prefs.edit().putString("currentTaskListId", id).apply()
+    prefs.edit().putString("currentTaskListId", id).commit()
   }
 
   @ReactMethod
   fun updateWidget() {
+    val ctx = reactContext.applicationContext
+    val intent = android.content.Intent("${ctx.packageName}.UPDATE_WIDGET")
+    ctx.sendBroadcast(intent)
+  }
+
+  /**
+   * Atomically writes all widget data and triggers an update. Use this instead of
+   * setTasks + setTaskLists + setCurrentTaskListId + updateWidget to guarantee the
+   * widget reads the new data (avoids bridge async ordering issues).
+   */
+  @ReactMethod
+  fun setAllAndUpdateWidget(tasksJson: String, taskListsJson: String, currentTaskListId: String) {
+    val prefs = reactContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+    prefs.edit()
+      .putString("tasks", tasksJson)
+      .putString("taskLists", taskListsJson)
+      .putString("currentTaskListId", currentTaskListId)
+      .commit()
     val ctx = reactContext.applicationContext
     val intent = android.content.Intent("${ctx.packageName}.UPDATE_WIDGET")
     ctx.sendBroadcast(intent)

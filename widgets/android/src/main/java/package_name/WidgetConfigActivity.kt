@@ -20,6 +20,7 @@ private const val PREFS_NAME = "tasks_widget_prefs"
 private const val TASKLISTS_KEY = "taskLists"
 private const val CURRENT_TASKLIST_ID_KEY = "currentTaskListId"
 private const val SHOW_COMPLETED_KEY = "showCompleted"
+private const val THEME_KEY = "theme"
 private const val TAG = "WidgetConfig"
 
 class WidgetConfigActivity : Activity() {
@@ -104,9 +105,9 @@ class WidgetConfigActivity : Activity() {
         
         val taskListSpinner = Spinner(this)
         val listNames = taskLists.map { it["title"] as? String ?: "" }
-        var adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, listNames)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        taskListSpinner.adapter = adapter
+        val taskListAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, listNames)
+        taskListAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        taskListSpinner.adapter = taskListAdapter
         
         // Find current selection index
         val currentIndex = taskLists.indexOfFirst { it["id"] == currentTaskListId }
@@ -127,33 +128,6 @@ class WidgetConfigActivity : Activity() {
         }
         dialogView.addView(spacing)
         
-        // Sort option (placeholder - not implemented)
-        val sortLabel = android.widget.TextView(this).apply {
-            text = "Sort By"
-            textSize = 16f
-            setPadding(0, 0, 0, 8)
-        }
-        dialogView.addView(sortLabel)
-        
-        val sortSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@WidgetConfigActivity,
-                android.R.layout.simple_spinner_item,
-                arrayOf("Due Date", "Title", "Created Date")
-            ).apply {
-                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-        }
-        dialogView.addView(sortSpinner)
-        
-        // Add spacing
-        dialogView.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                24
-            )
-        })
-        
         // Theme option (placeholder - not implemented)
         val themeLabel = android.widget.TextView(this).apply {
             text = "Theme"
@@ -162,15 +136,23 @@ class WidgetConfigActivity : Activity() {
         }
         dialogView.addView(themeLabel)
         
-        val themeSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@WidgetConfigActivity,
-                android.R.layout.simple_spinner_item,
-                arrayOf("Light", "Dark", "System")
-            ).apply {
-                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-        }
+        // Load current theme preference (default: "Light")
+        val currentTheme = prefs.getString(THEME_KEY, "Light") ?: "Light"
+        val themeSpinner = Spinner(this)
+        val themeOptions = arrayOf("Light", "Dark")
+        val themeAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            themeOptions
+        )
+        themeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        themeSpinner.adapter = themeAdapter
+        
+        // Set current selection (default to "Light" which is index 0)
+        val selectedIndex = if (currentTheme == "Dark") 1 else 0
+        themeSpinner.setSelection(selectedIndex)
+        Log.d(TAG, "Theme spinner initialized with selection: $selectedIndex (theme: $currentTheme)")
+        
         dialogView.addView(themeSpinner)
         
         // Add spacing
@@ -203,11 +185,18 @@ class WidgetConfigActivity : Activity() {
                     
                     Log.d(TAG, "Saving selected list ID: $selectedListId")
                     
-                    // Save selected list and show completed setting
+                    // Get selected theme (should never be null since we have items, but safe cast anyway)
+                    val selectedTheme = (themeSpinner.selectedItem as? String) ?: "Light"
+                    Log.d(TAG, "Selected theme from spinner: $selectedTheme")
+                    
+                    // Save selected list, show completed setting, and theme
                     prefs.edit()
                         .putString(CURRENT_TASKLIST_ID_KEY, selectedListId)
                         .putBoolean(SHOW_COMPLETED_KEY, showCompletedCheckbox.isChecked)
+                        .putString(THEME_KEY, selectedTheme)
                         .apply()
+                    
+                    Log.d(TAG, "Theme saved: $selectedTheme")
                     
                     Log.d(TAG, "Show completed: ${showCompletedCheckbox.isChecked}")
                     

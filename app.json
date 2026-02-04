@@ -64,7 +64,8 @@
             ]
           }
         }
-      ]
+      ],
+      "./plugins/withTasksWidgetSetup"
     ],
     "splash": {
       "image": "assets/vecteezy_checklist.png",

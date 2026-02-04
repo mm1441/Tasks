@@ -13,10 +13,12 @@
         android:id="@+id/task_checkbox"
         android:layout_width="32dp"
         android:layout_height="32dp"
-        android:src="@android:drawable/checkbox_off_background"
-        android:background="@android:color/transparent"
+        android:src="@drawable/ic_checkbox_unchecked"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
         android:contentDescription="Toggle task"
-        android:padding="4dp" />
+        android:padding="4dp"
+        android:clickable="true"
+        android:focusable="true" />
     
     <!-- Task title -->
     <TextView
@@ -29,5 +31,7 @@
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
         android:singleLine="true"
-        android:ellipsize="end" />
+        android:ellipsize="end"
+        android:clickable="true"
+        android:focusable="true" />
 </LinearLayout>

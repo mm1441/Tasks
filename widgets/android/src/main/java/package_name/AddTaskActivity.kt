@@ -1,12 +1,16 @@
 package package_name
 
+
+
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.Window
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -20,7 +24,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.view.ViewTreeObserver
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
@@ -30,6 +33,7 @@ import java.util.Locale
 private const val PREFS_NAME = "tasks_widget_prefs"
 private const val TASKS_KEY = "tasks"
 private const val CURRENT_TASKLIST_ID_KEY = "currentTaskListId"
+private const val THEME_KEY = "theme"
 private const val TAG = "AddTaskActivity"
 
 class AddTaskActivity : Activity() {
@@ -40,52 +44,79 @@ class AddTaskActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Configure window for full screen, no dimming
         requestWindowFeature(Window.FEATURE_NO_TITLE)
+        window.setBackgroundDrawableResource(android.R.color.transparent)
         
-        window.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
-            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or 
-                           WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        val params = window.attributes
+        params.dimAmount = 0.0f
+        window.attributes = params
+        
+        // Ensure window fills entire screen
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+        
+        // Load theme preference (default: "Light")
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val theme = prefs.getString(THEME_KEY, "Light") ?: "Light"
+        val isDarkTheme = theme == "Dark"
+        
+        Log.d(TAG, "AddTaskActivity theme: $theme (isDark: $isDarkTheme)")
+        
+        // Apply theme colors
+        val backgroundColor = if (isDarkTheme) Color.parseColor("#1E1E1E") else Color.WHITE
+        val textColor = if (isDarkTheme) Color.WHITE else Color.BLACK
+        val hintColor = Color.parseColor("#9E9E9E") // Same gray for both themes
+        val accentBlue = Color.parseColor("#007AFF") // Blue for save button (same in both themes)
+        val iconColor = if (isDarkTheme) Color.WHITE else Color.BLACK
+        
+        // Root FrameLayout that fills entire screen - clickable to close on outside tap
+        val rootFrame = android.widget.FrameLayout(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            setBackgroundColor(Color.TRANSPARENT)
+            // Close activity when clicking outside content area
+            setOnClickListener {
+                finish()
+            }
         }
         
-        val darkGray = Color.parseColor("#3C3C3C")
-        val hintColor = Color.parseColor("#9E9E9E")
-        val accentBlue = Color.parseColor("#8AB4F8")
-        
+        // Background drawable for content (rounded top corners only) - theme-aware background
         val backgroundDrawable = GradientDrawable().apply {
-            setColor(darkGray)
+            setColor(backgroundColor)
             cornerRadii = floatArrayOf(
-                dpToPx(12).toFloat(), dpToPx(12).toFloat(),
-                dpToPx(12).toFloat(), dpToPx(12).toFloat(),
+                dpToPx(16).toFloat(), dpToPx(16).toFloat(),
+                dpToPx(16).toFloat(), dpToPx(16).toFloat(),
                 0f, 0f, 0f, 0f
             )
         }
         
-        val rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-            gravity = Gravity.BOTTOM
-            setBackgroundColor(Color.TRANSPARENT)
-            isClickable = true
-            setOnClickListener { finish() }
-        }
-        
+        // Content layout - positioned at bottom, will move up with keyboard
         val contentLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = backgroundDrawable
-            isClickable = true
+            elevation = 8f
+            isClickable = true // Prevent clicks from propagating to rootFrame
+            isFocusable = true
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM
+            }
         }
+        
+        // Store original bottom padding to restore when keyboard closes
+        val originalBottomPadding = dpToPx(16)
+        
+        rootFrame.addView(contentLayout)
         
         val titleInput = EditText(this).apply {
             hint = "New task"
             setHintTextColor(hintColor)
-            setTextColor(Color.WHITE)
+            setTextColor(textColor)
             textSize = 16f
             background = null
             setPadding(0, 0, 0, dpToPx(8))
@@ -99,7 +130,7 @@ class AddTaskActivity : Activity() {
         descriptionInput = EditText(this).apply {
             hint = "Add description"
             setHintTextColor(hintColor)
-            setTextColor(Color.WHITE)
+            setTextColor(textColor)
             textSize = 14f
             background = null
             visibility = View.GONE
@@ -117,7 +148,7 @@ class AddTaskActivity : Activity() {
             text = ""
             visibility = View.GONE
             textSize = 14f
-            setTextColor(accentBlue)
+            setTextColor(textColor)
             setPadding(0, dpToPx(4), 0, dpToPx(8))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -148,7 +179,7 @@ class AddTaskActivity : Activity() {
         
         val detailsButton = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_sort_by_size)
-            setColorFilter(hintColor)
+            setColorFilter(iconColor)
             background = null
             contentDescription = "Add description"
             layoutParams = LinearLayout.LayoutParams(dpToPx(40), dpToPx(40))
@@ -169,7 +200,7 @@ class AddTaskActivity : Activity() {
         
         val calendarButton = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_my_calendar)
-            setColorFilter(hintColor)
+            setColorFilter(iconColor)
             background = null
             contentDescription = "Add due date"
             layoutParams = LinearLayout.LayoutParams(dpToPx(40), dpToPx(40))
@@ -184,7 +215,7 @@ class AddTaskActivity : Activity() {
         
         val saveButton = TextView(this).apply {
             text = "Save"
-            setTextColor(hintColor)
+            setTextColor(accentBlue)
             textSize = 14f
             setPadding(dpToPx(16), dpToPx(8), dpToPx(8), dpToPx(8))
             setOnClickListener {
@@ -198,9 +229,46 @@ class AddTaskActivity : Activity() {
         bottomRow.addView(saveButton)
         
         contentLayout.addView(bottomRow)
-        rootLayout.addView(contentLayout)
         
-        setContentView(rootLayout)
+        // Set root FrameLayout as content view (full screen)
+        setContentView(rootFrame)
+        
+        // Listen for keyboard visibility changes and adjust content position
+        val rootView = window.decorView.rootView
+        rootView.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                val rect = Rect()
+                rootView.getWindowVisibleDisplayFrame(rect)
+                val screenHeight = rootView.height
+                val visibleBottom = rect.bottom
+                val keyboardHeight = screenHeight - visibleBottom
+                
+                val layoutParams = contentLayout.layoutParams as android.widget.FrameLayout.LayoutParams
+                
+                if (keyboardHeight > screenHeight * 0.15) {
+                    // Keyboard is visible - position content directly above keyboard (no gap)
+                    // Remove bottom padding to eliminate gap, position right at keyboard top
+                    contentLayout.setPadding(
+                        contentLayout.paddingLeft,
+                        contentLayout.paddingTop,
+                        contentLayout.paddingRight,
+                        0
+                    )
+                    layoutParams.bottomMargin = screenHeight - visibleBottom
+                } else {
+                    // Keyboard is hidden - restore bottom padding and position above nav bar
+                    contentLayout.setPadding(
+                        contentLayout.paddingLeft,
+                        contentLayout.paddingTop,
+                        contentLayout.paddingRight,
+                        originalBottomPadding
+                    )
+                    layoutParams.bottomMargin = screenHeight - visibleBottom
+                }
+                
+                contentLayout.layoutParams = layoutParams
+            }
+        })
         
         titleInput.requestFocus()
         titleInput.post {
@@ -208,6 +276,7 @@ class AddTaskActivity : Activity() {
             imm.showSoftInput(titleInput, InputMethodManager.SHOW_IMPLICIT)
         }
     }
+    
     
     private fun dpToPx(dp: Int): Int {
         return TypedValue.applyDimension(
