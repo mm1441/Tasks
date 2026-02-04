@@ -7,6 +7,23 @@ const {
 } = require("@expo/config-plugins");
 const { getMainApplicationOrThrow } = require("@expo/config-plugins/build/android/Manifest");
 
+/** Recursively replace "package_name" with actual package in .kt files (fixes deep link / home URIs). */
+async function replacePackageNameInKotlinRecursive(dir, packageName) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const e of entries) {
+    const fullPath = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      await replacePackageNameInKotlinRecursive(fullPath, packageName);
+    } else if (e.name.endsWith(".kt")) {
+      let content = await fs.readFile(fullPath, "utf8");
+      if (content.includes("package_name")) {
+        content = content.replace(/package_name/g, packageName);
+        await fs.writeFile(fullPath, content);
+      }
+    }
+  }
+}
+
 /**
  * Expo config plugin that applies the required Android changes for the tasks widget:
  * - AndroidManifest: full receiver intent-filters, TaskListService, WidgetConfigActivity, AddTaskActivity
@@ -192,7 +209,7 @@ function withTasksWidgetSetup(config) {
       });
     }
 
-    // Replace package_name in tasks_widget_info.xml (runs after styles mod, so widget files are already copied)
+    // Replace package_name in tasks_widget_info.xml and in Kotlin string literals (widget plugin only replaces package/imports, not URIs)
     const projectRoot = config.modRequest?.projectRoot;
     const androidRoot =
       config.modRequest?.platformProjectRoot ||
@@ -213,6 +230,14 @@ function withTasksWidgetSetup(config) {
           content = content.replace(/package_name/g, packageName);
           await fs.writeFile(xmlPath, content);
         }
+      } catch (err) {
+        if (err.code !== "ENOENT") throw err;
+      }
+
+      // Replace package_name in Kotlin files (deep link and home URIs) so intent-filters match
+      const javaRoot = path.join(androidRoot, "app", "src", "main", "java");
+      try {
+        await replacePackageNameInKotlinRecursive(javaRoot, packageName);
       } catch (err) {
         if (err.code !== "ENOENT") throw err;
       }
