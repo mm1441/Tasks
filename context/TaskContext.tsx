@@ -34,12 +34,17 @@ interface TaskContextType {
   deleteTaskList: (id: string) => void;
   downloadFromGoogle: (accessToken: string, onProgress?: (message: string) => void) => Promise<SyncResult>;
   uploadToGoogle: (accessToken: string, onProgress?: (message: string) => void) => Promise<SyncResult>;
+  autoSyncEnabled: boolean;
+  setAutoSyncEnabled: (value: boolean) => void;
+  syncPriority: 'cloud' | 'local';
+  setSyncPriority: (value: 'cloud' | 'local') => void;
 }
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
 const TASKS_STORAGE_KEY = "@tasks";
 const TASKLISTS_STORAGE_KEY = "@tasklists";
 const CURRENT_TASKLIST_STORAGE_KEY = "@currentTaskList";
+const SYNC_SETTINGS_STORAGE_KEY = "@syncSettings";
 const PREFS_NAME = "tasks_widget_prefs"
 
 export function TaskProvider({ children }: { children: ReactNode }) {
@@ -50,6 +55,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showDeletedTasks, setShowDeletedTasks] = useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [syncPriority, setSyncPriority] = useState<'cloud' | 'local'>('cloud');
 
   const currentTaskList = useMemo(() => taskLists.find(tl => tl.id === currentTaskListId) ?? null, [taskLists, currentTaskListId]);
 
@@ -114,6 +121,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
     })();
   }, [currentTaskListId, isLoading]);
+
+  // Persist sync settings whenever they change
+  useEffect(() => {
+    if (isLoading) return;
+    (async () => {
+      try {
+        await AsyncStorage.setItem(SYNC_SETTINGS_STORAGE_KEY, JSON.stringify({ autoSyncEnabled, syncPriority }));
+        console.debug("[TaskProvider] saved sync settings ->", { autoSyncEnabled, syncPriority });
+      } catch (e) {
+        console.error("Failed to save sync settings:", e);
+      }
+    })();
+  }, [autoSyncEnabled, syncPriority, isLoading]);
 
   // Update widget whenever tasks, taskLists, or current list change
   useEffect(() => {
@@ -185,6 +205,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const storedTasks = await AsyncStorage.getItem(TASKS_STORAGE_KEY);
       const storedTaskLists = await AsyncStorage.getItem(TASKLISTS_STORAGE_KEY);
       const storedCurrentTaskListId = await AsyncStorage.getItem(CURRENT_TASKLIST_STORAGE_KEY);
+      const storedSyncSettings = await AsyncStorage.getItem(SYNC_SETTINGS_STORAGE_KEY);
 
       let loadedTasks: Task[] = storedTasks ? JSON.parse(storedTasks) : [];
       let loadedTaskLists: TaskList[] = storedTaskLists ? JSON.parse(storedTaskLists) : [];
@@ -271,6 +292,16 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       setTasks(loadedTasks);
       setTaskLists(loadedTaskLists);
       setCurrentTaskListId(prev => prev !== null ? prev : restoredCurrentListId);
+
+      if (storedSyncSettings) {
+        try {
+          const parsed = JSON.parse(storedSyncSettings) as { autoSyncEnabled?: boolean; syncPriority?: 'cloud' | 'local' };
+          if (typeof parsed.autoSyncEnabled === 'boolean') setAutoSyncEnabled(parsed.autoSyncEnabled);
+          if (parsed.syncPriority === 'cloud' || parsed.syncPriority === 'local') setSyncPriority(parsed.syncPriority);
+        } catch (e) {
+          console.warn("[TaskProvider] Failed to parse sync settings:", e);
+        }
+      }
 
       await Notifications.cancelAllScheduledNotificationsAsync();
       loadedTasks.forEach(task => {
@@ -404,12 +435,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const tasksToCancel = tasks.filter(t => t.tasklistId === id);
     tasksToCancel.forEach(t => Notifications.cancelScheduledNotificationAsync(t.id).catch(() => { }));
     setTasks(prev => prev.filter(t => t.tasklistId !== id));
-    setTaskLists(prev => {
-      const remaining = prev.filter(tl => tl.id !== id);
-      if (currentTaskListId === id)
-        setCurrentTaskList(remaining.length > 0 ? remaining[0].id : null);
-      return remaining;
-    });
+    setTaskLists(prev => prev.filter(tl => tl.id !== id));
+    if (currentTaskListId === id) {
+      const remaining = taskLists.filter(tl => tl.id !== id);
+      setCurrentTaskList(remaining.length > 0 ? remaining[0].id : null);
+    }
   };
 
   const scheduleNotification = async (task: Task): Promise<string | null> => {
@@ -703,7 +733,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       tasks, taskLists, currentTaskList, currentTaskListId,
       syncStatus, syncError, showDeletedTasks, setShowDeletedTasks, setCurrentTaskList, addTask, updateTask, deleteTask,
       permanentlyDeleteTask, reorderTasks, addTaskList, updateTaskList, deleteTaskList,
-      downloadFromGoogle, uploadToGoogle
+      downloadFromGoogle, uploadToGoogle,
+      autoSyncEnabled, setAutoSyncEnabled, syncPriority, setSyncPriority
     }}>
       {children}
     </TaskContext.Provider>

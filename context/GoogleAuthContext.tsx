@@ -60,7 +60,6 @@ export function GoogleAuthProvider({ children }: { children: ReactNode }) {
     try {
       const tokens = await authService.signIn();
       setIsAuthenticated(true);
-      // User info is fetched automatically in signIn, so get it from the service
       const userInfo = authService.getUserInfo();
       setUserInfo(userInfo);
     } catch (error) {

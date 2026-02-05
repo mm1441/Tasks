@@ -68,6 +68,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     syncStatus,
     syncError,
     showDeletedTasks,
+    autoSyncEnabled,
+    syncPriority,
   } = useTasks();
   
   const [newListModalVisible, setNewListModalVisible] = useState(false);
@@ -112,6 +114,38 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       setCurrentTaskList(taskLists[0].id);
     }
   }, [taskLists, currentTaskList]);
+
+  // Auto-sync when switching task lists
+  const isFirstAutoSyncRef = useRef(true);
+  useEffect(() => {
+    // Skip first mount to avoid syncing on app open
+    if (isFirstAutoSyncRef.current) {
+      isFirstAutoSyncRef.current = false;
+      return;
+    }
+    if (!autoSyncEnabled || !isOnline || !isAuthenticated || !currentTaskList || syncStatus === 'syncing') {
+      return;
+    }
+
+    const runAutoSync = async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+
+        if (syncPriority === 'cloud') {
+          await downloadFromGoogle(token);
+          await uploadToGoogle(token);
+        } else {
+          await uploadToGoogle(token);
+          await downloadFromGoogle(token);
+        }
+      } catch (e) {
+        console.warn('[HomeScreen] Auto-sync failed:', e);
+      }
+    };
+
+    runAutoSync();
+  }, [currentTaskListId]);
 
   const displayedTasks = useMemo(() => {
     if (!currentTaskListId) 
@@ -180,8 +214,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const activeIndex = useMemo(() => {
     if (!currentTaskList) return 0;
-    return taskLists.findIndex(t => t.id === currentTaskList.id);
+    const idx = taskLists.findIndex(t => t.id === currentTaskList.id);
+    return idx >= 0 ? idx : 0;
   }, [taskLists, currentTaskList]);
+
+  const handleTaskListActiveChange = useCallback((index: number) => {
+    if (index < 0 || index >= taskLists.length) return;
+    setCurrentTaskList(taskLists[index].id);
+  }, [taskLists, setCurrentTaskList]);
 
   const toggleSelectTask = useCallback((id: string) => {
     setSelectedTaskIds(prev => {
@@ -642,10 +682,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         <HorizontalScrollWithUnderline
           taskLists={taskLists}
           selectedIndex={activeIndex}
-          onActiveChange={(index) => {
-            if (index < 0 || index >= taskLists.length) return;
-            setCurrentTaskList(taskLists[index].id);
-          }}
+          onActiveChange={handleTaskListActiveChange}
           onAddPress={() => setNewListModalVisible(true)}
         />
 

@@ -130,7 +130,7 @@ function TaskCardInner({
       {selected && (
         <View style={styles.checkWrap}>
           <View style={styles.checkCircle}>
-            <Ionicons name="checkmark" size={16} color={theme.text} />
+            <Ionicons name="checkmark" size={16} color={'#FFFFFF'} />
           </View>
         </View>
       )}

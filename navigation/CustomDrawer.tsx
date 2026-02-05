@@ -9,6 +9,8 @@ import {
   Dimensions,
   Share,
   InteractionManager,
+  Pressable,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { DrawerContentComponentProps } from "@react-navigation/drawer";
@@ -26,19 +28,21 @@ const { height } = Dimensions.get('window');
 export default function CustomDrawer(props: DrawerContentComponentProps) {
   const { navigation } = props;
   const { theme, scheme, themeColor, toggleTheme, setThemeColor } = useTheme();
-  const [showDropdown, setShowDropdown] = useState(false);
   const [showThemeColorDropdown, setShowThemeColorDropdown] = useState(false);
   const { 
     tasks, 
     currentTaskList, 
     showDeletedTasks, 
-    setShowDeletedTasks 
+    setShowDeletedTasks,
+    autoSyncEnabled,
+    setAutoSyncEnabled,
+    syncPriority,
+    setSyncPriority,
   } = useTasks();
   const { isAuthenticated, signIn, signOut, userInfo } = useGoogleAuth();
 
-  // Use real user data when authenticated, otherwise use defaults
-  const displayName = userInfo?.name || "Name Lastname";
-  const displayEmail = userInfo?.email || "name.lastname@example.com";
+  const displayName = userInfo?.name || "Log In";
+  const displayEmail = userInfo?.email || "Start syncing tasks with Google";
   const profilePicture = userInfo?.picture ? { uri: userInfo.picture } : DEFAULT_AVATAR;
 
   const styles = makeStyles(theme);
@@ -178,6 +182,16 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
           setShowThemeColorDropdown(!showThemeColorDropdown);
         },
       },
+      ...(isAuthenticated
+        ? [
+            {
+              key: "automaticSync",
+              label: "Automatic sync",
+              icon: <Ionicons name="sync-outline" size={20} color={theme.text} />,
+              onPress: () => {},
+            },
+          ]
+        : []),
       // {
       //   key: "profile",
       //   label: "Profile",
@@ -212,48 +226,46 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
           </TouchableOpacity>
         </View>
 
-        {/* User info with dropdown icon */}
+        {/* User info */}
+        {!isAuthenticated ? 
+        <TouchableOpacity onPress={handleLoginLogout}>
+          <View style={styles.userInfo}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View>
+                <Text style={styles.name}>{displayName}</Text>
+                <Text style={styles.email}>{displayEmail}</Text>
+              </View>
+            </View>
+          </View>
+        </TouchableOpacity> :
         <View style={styles.userInfo}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View>
               <Text style={styles.name}>{displayName}</Text>
               <Text style={styles.email}>{displayEmail}</Text>
             </View>
-            <TouchableOpacity style={{paddingRight: 4}} onPress={() => setShowDropdown(!showDropdown)}>
-              {showDropdown ? 
-                <Ionicons name="chevron-up" size={20} color={theme.text} /> 
-                : <Ionicons name="chevron-down" size={20} color={theme.text} />
-              }
-            </TouchableOpacity>
           </View>
-
-          {/* Dropdown menu */}
-          {showDropdown && (
-            <View style={styles.dropdownContainer}>
-              <TouchableOpacity
-                style={styles.dropdownItem}
-                onPress={() => {
-                  setShowDropdown(false);
-                  Alert.alert("Not implemented", "Add account action not implemented yet");
-                }}
-              >
-                <View style={styles.menuIcon}>
-                  <MaterialIcons name="person-add" size={20} color={theme.text} />
-                </View>
-                <Text style={styles.menuLabel}>Add account</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        </View>}
       </View>
-
       {/* Menu section */}
       <View style={styles.menuSection}>
         {menuItems.map((it) => (
           <View key={it.key}>
-            <TouchableOpacity style={styles.menuItem} onPress={it.onPress}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={it.key === "automaticSync" ? () => setAutoSyncEnabled(!autoSyncEnabled) : it.onPress}
+            >
               <View style={styles.menuIcon}>{it.icon}</View>
               <Text style={styles.menuLabel}>{it.label}</Text>
+              {it.key === "automaticSync" && (
+                <Switch
+                  value={autoSyncEnabled}
+                  onValueChange={setAutoSyncEnabled}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor={theme.background}
+                  style={{ marginLeft: 'auto' }}
+                />
+              )}
               {it.key === "themeColor" && (
                 <Ionicons 
                   name={showThemeColorDropdown ? "chevron-up" : "chevron-down"} 
@@ -263,6 +275,36 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
                 />
               )}
             </TouchableOpacity>
+
+            {/* Sync priority (when automatic sync is on) */}
+            {it.key === "automaticSync" && autoSyncEnabled && (
+              <View style={styles.themeColorDropdown}>
+                <TouchableOpacity
+                  style={[
+                    styles.themeColorOption,
+                    syncPriority === 'cloud' && styles.themeColorOptionSelected,
+                  ]}
+                  onPress={() => setSyncPriority('cloud')}
+                >
+                  <Text style={styles.themeColorLabel}>Cloud first (download then upload)</Text>
+                  {syncPriority === 'cloud' && (
+                    <Ionicons name="checkmark" size={18} color={theme.primary} style={{ marginLeft: 'auto' }} />
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.themeColorOption,
+                    syncPriority === 'local' && styles.themeColorOptionSelected,
+                  ]}
+                  onPress={() => setSyncPriority('local')}
+                >
+                  <Text style={styles.themeColorLabel}>Local first (upload then download)</Text>
+                  {syncPriority === 'local' && (
+                    <Ionicons name="checkmark" size={18} color={theme.primary} style={{ marginLeft: 'auto' }} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
             
             {/* Theme color dropdown */}
             {it.key === "themeColor" && showThemeColorDropdown && (
